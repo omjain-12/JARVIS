@@ -1,0 +1,140 @@
+You are a senior AI systems architect and software engineering mentor.
+
+Your task is to create a **complete step-by-step implementation plan** for building a **production-grade multi-agent AI system**.
+
+Do **NOT write any code**.
+Do **NOT provide pseudocode**.
+Only produce a **detailed implementation roadmap**.
+
+The goal is to explain **how the project should be built from scratch to deployment**, including architecture, development phases, engineering decisions, infrastructure setup, and testing strategy.
+
+The system being built is a **multi-agent AI application using the Planner → Retriever → Executor architecture**.
+
+The project should be treated as a **real production-ready system**, not a toy demo.
+
+Your plan must be **extremely structured, sequential, and detailed** so that a developer can follow it step-by-step to implement the system.
+
+---
+
+PROJECT CONTEXT
+
+We are building an **AI Second Brain / Personal Knowledge Manager** using a **multi-agent architecture**.
+
+The system should:
+
+• Accept knowledge sources (PDFs, notes, transcripts, bookmarks)
+• Extract and store knowledge
+• Organize information into structured topics
+• Generate actionable outputs such as summaries, flashcards, quizzes, and study plans
+• Maintain long-term knowledge memory
+• Execute tasks such as scheduling revisions or creating actionable learning plans
+
+The system uses three cooperating agents:
+
+Planner Agent
+Decides strategy, topic structure, and task planning.
+
+Retriever Agent
+Extracts knowledge from documents and retrieves relevant context using embeddings and vector search.
+
+Executor Agent
+Generates outputs and performs actions such as creating study plans, flashcards, quizzes, and schedules.
+
+---
+
+TECH STACK (TARGET)
+
+The implementation should assume use of:
+
+• Azure OpenAI (LLM reasoning + embeddings)
+• Azure Document Intelligence (document parsing)
+• Azure AI Search / Vector Database (knowledge retrieval)
+• Azure Blob Storage (document storage)
+• Azure Container Apps (deployment and scaling)
+• FastAPI backend
+• React or Next.js frontend dashboard
+• Multi-agent orchestration using AutoGen, Semantic Kernel, or LangGraph
+
+Agents should be deployed as **independent containerized services**.
+
+---
+
+SYSTEM ARCHITECTURE
+
+The system should include:
+
+Frontend UI
+API Gateway / Backend
+Planner Agent Service
+Retriever Agent Service
+Executor Agent Service
+Vector Database
+Document Storage
+Memory System
+Monitoring & Logging
+
+The architecture must support:
+
+• distributed agent collaboration
+• long-term memory
+• scalable microservices
+• production deployment
+
+---
+
+WHAT THE OUTPUT MUST CONTAIN
+
+Provide a **step-by-step roadmap from idea to deployment**.
+
+Each step should include:
+
+1. Step title
+2. Objective of the step
+3. Detailed explanation of what must be done
+4. Expected outcome of that step
+
+---
+
+THE PLAN MUST INCLUDE SECTIONS FOR:
+
+Project architecture design
+System requirements definition
+Agent role design
+Agent state design
+Memory architecture (vector + structured memory)
+Document ingestion pipeline
+Knowledge retrieval pipeline
+Agent orchestration logic
+Task planning workflow
+Action execution pipeline
+Backend API design
+Frontend dashboard design
+User workflow design
+Security and data handling
+Monitoring and logging
+Testing strategy
+Evaluation metrics
+Deployment architecture
+Scaling strategy
+Failure handling
+Demo preparation
+
+---
+
+IMPORTANT RULES
+
+Do NOT write any code.
+
+Do NOT shorten the explanation.
+
+Do NOT skip steps.
+
+Do NOT assume knowledge gaps.
+
+Produce a **complete engineering execution plan with as many steps as necessary**.
+
+The output should resemble a **technical implementation roadmap used in real software engineering projects**.
+
+Begin with:
+
+Step 1 — Problem Definition and Scope

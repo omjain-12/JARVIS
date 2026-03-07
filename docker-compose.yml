@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  jarvis:
+    build: .
+    container_name: jarvis-api
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///data/jarvis.db
+    volumes:
+      - jarvis-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  jarvis-data:
