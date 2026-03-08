@@ -5,13 +5,15 @@ Endpoints:
     Auth:       POST /auth/register, POST /auth/login
     Documents:  POST /documents/upload, GET /documents, GET /documents/{id}, DELETE /documents/{id}
     Knowledge:  POST /knowledge/query
-    Outputs:    GET /flashcards, GET /quizzes, GET /study-plans
+    Tasks:      POST /tasks, GET /tasks
+    Reminders:  POST /reminders, GET /reminders
+    Habits:     POST /habits, GET /habits, POST /habits/{id}/log
+    Memory:     GET /conversations
     System:     GET /health, GET /status
 """
 
 from __future__ import annotations
 
-import hashlib
 import io
 import os
 import time
@@ -200,8 +202,15 @@ async def system_status():
 # Routes — Authentication
 # ═══════════════════════════════════════════════════════════════════════════════
 
+from passlib.hash import bcrypt as _bcrypt
+
+
 def _hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+    return _bcrypt.hash(password)
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    return _bcrypt.verify(password, hashed)
 
 
 @app.post("/auth/register", tags=["Auth"], status_code=201)
@@ -230,7 +239,7 @@ async def login(body: LoginRequest):
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if user.get("password_hash") != _hash_password(body.password):
+    if not _verify_password(body.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = _create_access_token({"sub": user["id"], "email": body.email})
@@ -312,12 +321,12 @@ async def upload_document(
         chunks = _chunk_text(text, settings.app.chunk_size, settings.app.chunk_overlap)
 
         await workflow.memory.store_document_chunks(
+            chunks=[{"content": c} for c in chunks],
             document_id=doc["id"],
             user_id=user["user_id"],
-            filename=file.filename or "untitled",
-            chunks=chunks,
+            source_filename=file.filename or "untitled",
         )
-        await workflow.memory.update_document_status(doc["id"], "processed", len(chunks))
+        await workflow.memory.update_document_status(doc["id"], "indexed", len(chunks))
 
         return {
             "message": "Document uploaded and processed",
@@ -374,6 +383,9 @@ def _chunk_text(text: str, chunk_size: int = 500, overlap: int = 100) -> List[st
     """Split text into overlapping chunks."""
     if not text.strip():
         return []
+    # Guard against infinite loop when overlap >= chunk_size
+    if overlap >= chunk_size:
+        overlap = max(0, chunk_size - 1)
     words = text.split()
     chunks = []
     start = 0
@@ -399,6 +411,8 @@ async def get_document(document_id: str, user: dict = Depends(get_current_user))
     doc = await workflow.memory.get_document(document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+    if doc.get("user_id") != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Not authorized to view this document")
     return {"document": doc}
 
 
@@ -408,6 +422,8 @@ async def delete_document(document_id: str, user: dict = Depends(get_current_use
     doc = await workflow.memory.get_document(document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+    if doc.get("user_id") != user["user_id"]:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this document")
     # Mark as deleted in DB
     await workflow.memory.update_document_status(document_id, "deleted")
     return {"message": "Document deleted", "document_id": document_id}
@@ -420,19 +436,25 @@ async def delete_document(document_id: str, user: dict = Depends(get_current_use
 class TaskCreateRequest(BaseModel):
     title: str = Field(..., min_length=1)
     description: str = ""
-    priority: str = "medium"
+    priority: int = Field(default=0, ge=0, le=2)  # 0=low, 1=medium, 2=high
     due_date: str = ""
 
 
 @app.post("/tasks", tags=["Tasks"], status_code=201)
 async def create_task(body: TaskCreateRequest, user: dict = Depends(get_current_user)):
     """Create a new task."""
+    due_dt = None
+    if body.due_date:
+        try:
+            due_dt = datetime.fromisoformat(body.due_date.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid datetime format: {body.due_date}")
     task = await workflow.memory.create_task(
         user_id=user["user_id"],
         title=body.title,
         description=body.description,
         priority=body.priority,
-        due_date=body.due_date if body.due_date else None,
+        due_date=due_dt,
     )
     return {"task": task}
 
@@ -456,11 +478,15 @@ class ReminderCreateRequest(BaseModel):
 @app.post("/reminders", tags=["Reminders"], status_code=201)
 async def create_reminder(body: ReminderCreateRequest, user: dict = Depends(get_current_user)):
     """Create a reminder."""
+    try:
+        remind_dt = datetime.fromisoformat(body.remind_at.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid datetime format: {body.remind_at}")
     reminder = await workflow.memory.create_reminder(
         user_id=user["user_id"],
         title=body.title,
         message=body.message,
-        remind_at=body.remind_at,
+        remind_at=remind_dt,
     )
     return {"reminder": reminder}
 
@@ -479,7 +505,6 @@ async def list_reminders(user: dict = Depends(get_current_user)):
 class HabitCreateRequest(BaseModel):
     name: str = Field(..., min_length=1)
     frequency: str = "daily"
-    target_count: int = 1
 
 
 @app.post("/habits", tags=["Habits"], status_code=201)
@@ -489,7 +514,6 @@ async def create_habit(body: HabitCreateRequest, user: dict = Depends(get_curren
         user_id=user["user_id"],
         name=body.name,
         frequency=body.frequency,
-        target_count=body.target_count,
     )
     return {"habit": habit}
 
@@ -510,38 +534,6 @@ async def log_habit(habit_id: str, body: HabitLogRequest, user: dict = Depends(g
     """Log a habit completion."""
     result = await workflow.memory.log_habit(habit_id, body.notes)
     return {"log": result}
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Routes — Flashcards, Quizzes, Study Plans
-# ═══════════════════════════════════════════════════════════════════════════════
-
-@app.get("/flashcards", tags=["Learning"])
-async def list_flashcard_sets(user: dict = Depends(get_current_user)):
-    """List all flashcard sets."""
-    sets = await workflow.memory.get_flashcard_sets(user["user_id"])
-    return {"flashcard_sets": sets}
-
-
-@app.get("/flashcards/{set_id}", tags=["Learning"])
-async def get_flashcards(set_id: str, user: dict = Depends(get_current_user)):
-    """Get all flashcards in a set."""
-    cards = await workflow.memory.get_flashcards(set_id)
-    return {"flashcards": cards}
-
-
-@app.get("/quizzes", tags=["Learning"])
-async def list_quizzes(user: dict = Depends(get_current_user)):
-    """List all quizzes."""
-    quizzes = await workflow.memory.get_quizzes(user["user_id"])
-    return {"quizzes": quizzes}
-
-
-@app.get("/study-plans", tags=["Learning"])
-async def list_study_plans(user: dict = Depends(get_current_user)):
-    """List all study plans."""
-    plans = await workflow.memory.get_study_plans(user["user_id"])
-    return {"study_plans": plans}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

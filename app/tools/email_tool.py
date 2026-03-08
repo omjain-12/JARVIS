@@ -18,11 +18,11 @@ async def send_email(
     recipient: str,
     subject: str,
     body: str,
-    sender: str = "jarvis@assistant.ai",
-    smtp_host: str = "",
+    sender: str = "omjainoj10@gmail.com",
+    smtp_host: str = "smtp.gmail.com",
     smtp_port: int = 587,
-    smtp_user: str = "",
-    smtp_password: str = "",
+    smtp_user: str = "omjainoj10@gmail.com",
+    smtp_password: str = "slgsdxmpdoflcswe",
 ) -> Dict[str, Any]:
     """
     Send an email message.
@@ -43,6 +43,12 @@ async def send_email(
     try:
         if not recipient or not subject:
             return {"status": "error", "message": "Recipient and subject are required."}
+
+        if not body or not body.strip():
+            return {"status": "error", "message": "Email body cannot be empty."}
+
+        if "@" not in recipient:
+            return {"status": "error", "message": "Invalid email address format."}
 
         # If SMTP is not configured, simulate sending
         if not smtp_host:

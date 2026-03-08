@@ -17,6 +17,8 @@ from typing import Any, Dict, List
 
 from app.memory.memory_manager import MemoryManager
 from app.state.agent_state import AgentState, add_log_entry
+from app.utils.azure_llm import get_openai_client
+from app.utils.azure_search import azure_search
 from app.utils.config import settings
 from app.utils.logger import get_logger
 
@@ -36,22 +38,11 @@ class RetrieverAgent:
 
     def __init__(self, memory_manager: MemoryManager):
         self.memory = memory_manager
-        self._llm_client = None
 
-    def _get_llm_client(self):
-        """Lazy-initialize Azure OpenAI client."""
-        if self._llm_client is None:
-            try:
-                from openai import AzureOpenAI
-                self._llm_client = AzureOpenAI(
-                    azure_endpoint=settings.azure_openai.endpoint,
-                    api_key=settings.azure_openai.api_key,
-                    api_version=settings.azure_openai.api_version,
-                )
-            except Exception as e:
-                logger.warning(f"LLM client not available for query expansion: {e}")
-                return None
-        return self._llm_client
+    @staticmethod
+    def _get_llm_client():
+        """Get the shared Azure OpenAI client from the central factory."""
+        return get_openai_client()
 
     async def expand_query(self, query: str) -> List[str]:
         """
@@ -62,8 +53,7 @@ class RetrieverAgent:
         """
         client = self._get_llm_client()
         if not client:
-            # Fallback: just return the original query
-            return [query]
+            raise RuntimeError("Azure OpenAI client not available for query expansion")
 
         try:
             response = client.chat.completions.create(
@@ -139,11 +129,15 @@ class RetrieverAgent:
         seen_ids = set()
 
         for eq in expanded_queries:
-            results = await self.memory.search_knowledge(
-                query=eq,
-                user_id=user_id,
-                top_k=settings.app.top_k_results,
-            )
+            try:
+                results = await azure_search(
+                    query=eq,
+                    top=settings.app.top_k_results,
+                    user_id=user_id,
+                )
+            except Exception as e:
+                logger.error(f"Azure search failed: {e}", event_type="azure_search_error")
+                results = []
             for r in results:
                 chunk_id = r.get("id", "")
                 if chunk_id not in seen_ids:
@@ -157,7 +151,15 @@ class RetrieverAgent:
         # 3. Structured Data Retrieval
         context = await self.memory.assemble_context(user_id, query)
 
-        # Override with our expanded search results
+        # Merge expanded search results with assembled chunks (deduplicated)
+        assembled_chunks = context.get("vector_memory", {}).get("knowledge_chunks", [])
+        merged_ids = {c.get("id", "") for c in top_chunks}
+        for chunk in assembled_chunks:
+            cid = chunk.get("id", "")
+            if cid and cid not in merged_ids:
+                top_chunks.append(chunk)
+                merged_ids.add(cid)
+        top_chunks.sort(key=lambda x: x.get("score", 0), reverse=True)
         context["vector_memory"]["knowledge_chunks"] = top_chunks
 
         # 4. Update retrieval summary
@@ -171,8 +173,13 @@ class RetrieverAgent:
             parts.append(f"{len(sm['habits'])} habits")
         if sm.get("documents"):
             parts.append(f"{len(sm['documents'])} documents")
+        if sm.get("learned_facts"):
+            parts.append(f"{len(sm['learned_facts'])} learned facts")
         if top_chunks:
             parts.append(f"{len(top_chunks)} relevant knowledge chunks")
+        bp = context.get("vector_memory", {}).get("behavior_patterns", [])
+        if bp:
+            parts.append(f"{len(bp)} behavior patterns")
 
         context["retrieval_summary"] = "Retrieved: " + ", ".join(parts) if parts else "No relevant context found"
 

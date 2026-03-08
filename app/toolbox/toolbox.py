@@ -87,8 +87,9 @@ class Toolbox:
         from app.tools.whatsapp_tool import TOOL_METADATA as whatsapp_meta
         from app.tools.reminder_tool import TOOL_METADATA as reminder_meta
         from app.tools.habit_tracker_tool import TOOL_METADATA as habit_meta
+        from app.tools.knowledge_store_tool import TOOL_METADATA as knowledge_meta
 
-        for meta in [email_meta, sms_meta, whatsapp_meta, reminder_meta, habit_meta]:
+        for meta in [email_meta, sms_meta, whatsapp_meta, reminder_meta, habit_meta, knowledge_meta]:
             self.register_from_metadata(meta)
 
         logger.info(f"Registered {len(self._tools)} default tools", event_type="toolbox_init")

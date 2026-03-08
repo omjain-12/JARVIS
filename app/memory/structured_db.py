@@ -2,8 +2,7 @@
 Structured Database — SQLAlchemy-based relational storage for JARVIS.
 
 Manages all structured entities: users, documents, tasks, reminders,
-habits, contacts, calendar events, preferences, goals, flashcard sets,
-quizzes, and study plans.
+habits, contacts, calendar events, preferences, goals, and conversations.
 
 Uses async SQLAlchemy with aiosqlite (local) or asyncpg (production PostgreSQL).
 """
@@ -63,9 +62,6 @@ class User(Base):
     contacts = relationship("Contact", back_populates="user", cascade="all, delete-orphan")
     calendar_events = relationship("CalendarEvent", back_populates="user", cascade="all, delete-orphan")
     goals = relationship("Goal", back_populates="user", cascade="all, delete-orphan")
-    flashcard_sets = relationship("FlashcardSet", back_populates="user", cascade="all, delete-orphan")
-    quizzes = relationship("Quiz", back_populates="user", cascade="all, delete-orphan")
-    study_plans = relationship("StudyPlan", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
 
 
@@ -188,76 +184,6 @@ class Goal(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", back_populates="goals")
-
-
-class FlashcardSet(Base):
-    __tablename__ = "flashcard_sets"
-
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    title = Column(String(500), nullable=False)
-    topic = Column(String(255), default="")
-    card_count = Column(Integer, default=0)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-    user = relationship("User", back_populates="flashcard_sets")
-    cards = relationship("Flashcard", back_populates="flashcard_set", cascade="all, delete-orphan")
-
-
-class Flashcard(Base):
-    __tablename__ = "flashcards"
-
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    set_id = Column(String, ForeignKey("flashcard_sets.id"), nullable=False)
-    front = Column(Text, nullable=False)
-    back = Column(Text, nullable=False)
-    difficulty = Column(String(50), default="medium")  # easy | medium | hard
-    next_review_date = Column(DateTime, nullable=True)
-    review_count = Column(Integer, default=0)
-
-    flashcard_set = relationship("FlashcardSet", back_populates="cards")
-
-
-class Quiz(Base):
-    __tablename__ = "quizzes"
-
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    title = Column(String(500), nullable=False)
-    topic = Column(String(255), default="")
-    question_count = Column(Integer, default=0)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-    user = relationship("User", back_populates="quizzes")
-    questions = relationship("QuizQuestion", back_populates="quiz", cascade="all, delete-orphan")
-
-
-class QuizQuestion(Base):
-    __tablename__ = "quiz_questions"
-
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    quiz_id = Column(String, ForeignKey("quizzes.id"), nullable=False)
-    question_text = Column(Text, nullable=False)
-    correct_answer = Column(Text, nullable=False)
-    options = Column(JSON, default=list)  # List of option strings
-    explanation = Column(Text, default="")
-
-    quiz = relationship("Quiz", back_populates="questions")
-
-
-class StudyPlan(Base):
-    __tablename__ = "study_plans"
-
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, ForeignKey("users.id"), nullable=False)
-    title = Column(String(500), nullable=False)
-    schedule = Column(JSON, default=dict)  # Day-by-day schedule
-    start_date = Column(DateTime, nullable=True)
-    end_date = Column(DateTime, nullable=True)
-    status = Column(String(50), default="active")
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-    user = relationship("User", back_populates="study_plans")
 
 
 class Session(Base):
@@ -448,7 +374,7 @@ class StructuredDB:
         async with self.async_session() as session:
             query = select(Reminder).where(Reminder.user_id == user_id)
             if not include_sent:
-                query = query.where(Reminder.is_sent == False)
+                query = query.where(Reminder.is_sent.is_(False))
             result = await session.execute(query.order_by(Reminder.remind_at))
             reminders = result.scalars().all()
             return [
@@ -548,120 +474,6 @@ class StructuredDB:
                 for g in goals
             ]
 
-    # ── Flashcard Operations ──
-
-    async def save_flashcard_set(self, user_id: str, title: str, topic: str,
-                                  cards: List[Dict[str, str]]) -> Dict[str, Any]:
-        async with self.async_session() as session:
-            fset = FlashcardSet(user_id=user_id, title=title, topic=topic, card_count=len(cards))
-            session.add(fset)
-            await session.flush()
-
-            for card_data in cards:
-                card = Flashcard(
-                    set_id=fset.id,
-                    front=card_data.get("front", ""),
-                    back=card_data.get("back", ""),
-                    difficulty=card_data.get("difficulty", "medium"),
-                )
-                session.add(card)
-
-            await session.commit()
-            await session.refresh(fset)
-            return {"id": fset.id, "title": fset.title, "card_count": fset.card_count}
-
-    async def get_flashcard_sets(self, user_id: str) -> List[Dict[str, Any]]:
-        from sqlalchemy import select
-        async with self.async_session() as session:
-            result = await session.execute(
-                select(FlashcardSet).where(FlashcardSet.user_id == user_id)
-                .order_by(FlashcardSet.created_at.desc())
-            )
-            sets = result.scalars().all()
-            return [
-                {"id": s.id, "title": s.title, "topic": s.topic, "card_count": s.card_count}
-                for s in sets
-            ]
-
-    async def get_flashcards(self, set_id: str) -> List[Dict[str, Any]]:
-        from sqlalchemy import select
-        async with self.async_session() as session:
-            result = await session.execute(
-                select(Flashcard).where(Flashcard.set_id == set_id)
-            )
-            cards = result.scalars().all()
-            return [
-                {"id": c.id, "front": c.front, "back": c.back, "difficulty": c.difficulty}
-                for c in cards
-            ]
-
-    # ── Quiz Operations ──
-
-    async def save_quiz(self, user_id: str, title: str, topic: str,
-                        questions: List[Dict[str, Any]]) -> Dict[str, Any]:
-        async with self.async_session() as session:
-            quiz = Quiz(user_id=user_id, title=title, topic=topic, question_count=len(questions))
-            session.add(quiz)
-            await session.flush()
-
-            for q_data in questions:
-                question = QuizQuestion(
-                    quiz_id=quiz.id,
-                    question_text=q_data.get("question", ""),
-                    correct_answer=q_data.get("correct_answer", ""),
-                    options=q_data.get("options", []),
-                    explanation=q_data.get("explanation", ""),
-                )
-                session.add(question)
-
-            await session.commit()
-            await session.refresh(quiz)
-            return {"id": quiz.id, "title": quiz.title, "question_count": quiz.question_count}
-
-    async def get_quizzes(self, user_id: str) -> List[Dict[str, Any]]:
-        from sqlalchemy import select
-        async with self.async_session() as session:
-            result = await session.execute(
-                select(Quiz).where(Quiz.user_id == user_id).order_by(Quiz.created_at.desc())
-            )
-            quizzes = result.scalars().all()
-            return [
-                {"id": q.id, "title": q.title, "topic": q.topic, "question_count": q.question_count}
-                for q in quizzes
-            ]
-
-    # ── Study Plan Operations ──
-
-    async def save_study_plan(self, user_id: str, title: str, schedule: dict,
-                               start_date: Optional[datetime] = None,
-                               end_date: Optional[datetime] = None) -> Dict[str, Any]:
-        async with self.async_session() as session:
-            plan = StudyPlan(
-                user_id=user_id, title=title, schedule=schedule,
-                start_date=start_date, end_date=end_date,
-            )
-            session.add(plan)
-            await session.commit()
-            await session.refresh(plan)
-            return {"id": plan.id, "title": plan.title, "status": plan.status}
-
-    async def get_study_plans(self, user_id: str) -> List[Dict[str, Any]]:
-        from sqlalchemy import select
-        async with self.async_session() as session:
-            result = await session.execute(
-                select(StudyPlan).where(StudyPlan.user_id == user_id).order_by(StudyPlan.created_at.desc())
-            )
-            plans = result.scalars().all()
-            return [
-                {
-                    "id": p.id, "title": p.title, "schedule": p.schedule,
-                    "status": p.status,
-                    "start_date": p.start_date.isoformat() if p.start_date else "",
-                    "end_date": p.end_date.isoformat() if p.end_date else "",
-                }
-                for p in plans
-            ]
-
     # ── Session & Conversation Operations ──
 
     async def save_conversation(self, user_id: str, session_id: str,
@@ -699,3 +511,19 @@ class StructuredDB:
         if user and user.get("preferences"):
             return [user["preferences"]]
         return []
+
+    async def update_user_preferences(self, user_id: str, preferences: Dict[str, Any]) -> Dict[str, Any]:
+        """Replace the user's preferences JSON with an updated dictionary."""
+        from sqlalchemy import select
+
+        async with self.async_session() as session:
+            result = await session.execute(select(User).where(User.id == user_id))
+            user = result.scalar_one_or_none()
+            if not user:
+                raise ValueError(f"User not found: {user_id}")
+
+            user.preferences = preferences
+            user.updated_at = datetime.now(timezone.utc)
+            await session.commit()
+
+            return {"user_id": user_id, "preferences": user.preferences}

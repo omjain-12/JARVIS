@@ -13,39 +13,32 @@ import uuid
 from typing import Any, Dict, List
 
 from app.state.agent_state import AgentState, add_log_entry
+from app.utils.azure_llm import get_openai_client
 from app.utils.config import settings
 from app.utils.logger import get_logger
 
 logger = get_logger("task_decomposer")
 
-DECOMPOSER_SYSTEM_PROMPT = """You are the Task Decomposer of JARVIS, an intelligent AI assistant.
+DECOMPOSER_SYSTEM_PROMPT = """You are the Task Decomposer of JARVIS.
+Break a STRATEGY into concrete, ordered TASKS.
 
-Your role is to take a STRATEGY and break it into CONCRETE TASKS.
+Rules:
+- Each task: specific, actionable, one action
+- Order by priority (highest first)
 
-## Rules:
-- Each task must be specific and actionable
-- Tasks must be ordered by priority (highest first)
-- Each task must have a clear description
-- Estimate the time needed for each task
-- Keep tasks atomic — one action per task
-
-## Output Format:
-Respond with ONLY a valid JSON object:
-
-```json
-{
+Respond with ONLY valid JSON:
+{{
     "tasks": [
-        {
+        {{
             "task_id": "unique_id",
-            "description": "What needs to be done",
+            "description": "what needs to be done",
             "priority": 1,
             "estimated_time": "30 seconds",
             "status": "pending",
             "depends_on": null
-        }
+        }}
     ]
-}
-```
+}}
 """
 
 
@@ -55,21 +48,12 @@ class TaskDecomposer:
     """
 
     def __init__(self):
-        self._llm_client = None
+        pass
 
-    def _get_llm_client(self):
-        if self._llm_client is None:
-            try:
-                from openai import AzureOpenAI
-                self._llm_client = AzureOpenAI(
-                    azure_endpoint=settings.azure_openai.endpoint,
-                    api_key=settings.azure_openai.api_key,
-                    api_version=settings.azure_openai.api_version,
-                )
-            except Exception as e:
-                logger.warning(f"LLM client not available: {e}")
-                return None
-        return self._llm_client
+    @staticmethod
+    def _get_llm_client():
+        """Get the shared Azure OpenAI client from the central factory."""
+        return get_openai_client()
 
     async def decompose(self, state: AgentState) -> AgentState:
         """

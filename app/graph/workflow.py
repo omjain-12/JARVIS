@@ -14,6 +14,7 @@ The graph mirrors the sequential pipeline in the Orchestrator but adds:
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, Dict, Optional
 
@@ -30,6 +31,7 @@ from app.safety.safety_check import run_safety_check
 from app.state.agent_state import AgentState, add_log_entry, create_initial_state
 from app.toolbox.toolbox import Toolbox
 from app.tools.habit_tracker_tool import set_memory_manager as set_habit_mm
+from app.tools.knowledge_store_tool import set_memory_manager as set_knowledge_mm
 from app.tools.reminder_tool import set_memory_manager as set_reminder_mm
 from app.utils.logger import get_logger
 
@@ -96,6 +98,7 @@ class JarvisWorkflow:
         self.toolbox.register_defaults()
         set_reminder_mm(self.memory)
         set_habit_mm(self.memory)
+        set_knowledge_mm(self.memory)
 
         tools_desc = self.toolbox.get_tools_description()
 
@@ -105,7 +108,7 @@ class JarvisWorkflow:
         self.task_decomposer = TaskDecomposer()
         self.action_planner = ActionPlanner(tools_description=tools_desc)
         self.executor = ExecutorAgent(self.memory, self.toolbox)
-        self.behavior_analyzer = BehaviorAnalyzer()
+        self.behavior_analyzer = BehaviorAnalyzer(memory_manager=self.memory)
 
         # Build & compile the graph
         self._app = self._build_graph()
@@ -119,47 +122,47 @@ class JarvisWorkflow:
         """
         Construct the LangGraph StateGraph and return the compiled app.
 
-        Graph topology::
+        Graph topology — conditional routing after planner::
 
             START
               │
               ▼
-            [safety_check] ──(error)──▶ [respond] ──▶ END
-              │ (ok)
+            [safety_check] ──(blocked)──▶ [respond] ──▶ END
+              │ (safe)
               ▼
             [retrieve]
               │
               ▼
-            [plan]
+            [plan] ──(answer)──▶ [execute] ──▶ [respond] ──▶ END
+              │                 ▲
+              ├─(plan)──▶ [decompose] ──▶ [execute] ──▶ [respond] ──▶ END
               │
-              ▼
-            [decompose]
-              │
-              ▼
-            [action_plan]
-              │
-              ▼
-            [confirm]
-              │
-              ▼
-            [execute]
-              │
-              ▼
-            [learn]
-              │
-              ▼
-            [respond] ──▶ END
+              └─(action)──▶ [decompose]
+                                │
+                              [action_plan]
+                                │
+                              [confirm]
+                                │
+                              [execute]
+                                │
+                              [learn]
+                                │
+                              [respond] ──▶ END
         """
-        graph = StateGraph(dict)  # Use plain dict for flexible TypedDict compat
+        graph = StateGraph(dict)
 
         # ── Register nodes ───────────────────────────────────────────────
         graph.add_node(SAFETY, self._node_safety)
+
         graph.add_node(RETRIEVE, self._node_retrieve)
+
         graph.add_node(PLAN, self._node_plan)
         graph.add_node(DECOMPOSE, self._node_decompose)
         graph.add_node(ACTION_PLAN, self._node_action_plan)
+
         graph.add_node(CONFIRM, self._node_confirm)
         graph.add_node(EXECUTE, self._node_execute)
+
         graph.add_node(LEARN, self._node_learn)
         graph.add_node(RESPOND, self._node_respond)
 
@@ -177,17 +180,44 @@ class JarvisWorkflow:
             },
         )
 
-        # Linear chain: retrieve → plan → decompose → action_plan → confirm
+        # Retrieve always leads to plan
         graph.add_edge(RETRIEVE, PLAN)
-        graph.add_edge(PLAN, DECOMPOSE)
-        graph.add_edge(DECOMPOSE, ACTION_PLAN)
-        graph.add_edge(ACTION_PLAN, CONFIRM)
 
-        # After confirmation: execute
+        # After plan: branch on decision
+        graph.add_conditional_edges(
+            PLAN,
+            self._route_after_plan,
+            {
+                "answer": EXECUTE,
+                "plan": DECOMPOSE,
+                "action": DECOMPOSE,
+            },
+        )
+
+        # After decompose: branch on decision (plan→execute, action→action_plan)
+        graph.add_conditional_edges(
+            DECOMPOSE,
+            self._route_after_decompose,
+            {
+                "execute": EXECUTE,
+                "action_plan": ACTION_PLAN,
+            },
+        )
+
+        # Action path: action_plan → confirm → execute → learn → respond
+        graph.add_edge(ACTION_PLAN, CONFIRM)
         graph.add_edge(CONFIRM, EXECUTE)
 
-        # After execution: learn → respond → END
-        graph.add_edge(EXECUTE, LEARN)
+        # After execute: branch on decision (action→learn, else→respond)
+        graph.add_conditional_edges(
+            EXECUTE,
+            self._route_after_execute,
+            {
+                "learn": LEARN,
+                "respond": RESPOND,
+            },
+        )
+
         graph.add_edge(LEARN, RESPOND)
         graph.add_edge(RESPOND, END)
 
@@ -202,6 +232,27 @@ class JarvisWorkflow:
         if system.get("error"):
             return "blocked"
         return "safe"
+
+    @staticmethod
+    def _route_after_plan(state: dict) -> str:
+        """Route based on the planner's decision: answer | plan | action."""
+        decision = state.get("planner_output", {}).get("decision", "answer")
+        if decision in ("plan", "action"):
+            return decision
+        return "answer"
+
+    @staticmethod
+    def _route_after_decompose(state: dict) -> str:
+        """After decompose: action decisions go to action_plan, others to execute."""
+        decision = state.get("planner_output", {}).get("decision", "answer")
+        if decision == "action":
+            return "action_plan"
+        return "execute"
+
+    @staticmethod
+    def _route_after_execute(state: dict) -> str:
+        """After execute: always run learning so every turn can update memory."""
+        return "learn"
 
     # ── Node Implementations ────────────────────────────────────────────────
     # Each node is a thin async wrapper around the corresponding agent.  It
@@ -272,14 +323,15 @@ class JarvisWorkflow:
         """
         Handle action confirmation.
 
-        In production, this node would emit a human-in-the-loop interrupt.
-        For now, it auto-confirms any pending actions.
+        If requires_confirmation is set, auto-confirm for now.
         """
         if state.get("system", {}).get("requires_confirmation"):
             state = add_log_entry(
                 state, "orchestrator", "auto_confirmed",
                 "Auto-confirmed (confirmation UI not yet implemented)",
             )
+            system = {**state.get("system", {}), "confirmed": True}
+            state = {**state, "system": system}
             logger.info("Action auto-confirmed", event_type="auto_confirm")
         return state
 
@@ -299,10 +351,73 @@ class JarvisWorkflow:
         return state
 
     async def _node_learn(self, state: dict) -> dict:
-        """Analyse user behaviour and update learning state."""
+        """Analyse user behaviour, persist detected patterns, and update learning state."""
         logger.log_state_transition("execution", "learning")
         try:
             state = await self.behavior_analyzer.analyze(state)
+
+            # Persist detected patterns to long-term memory
+            user_id = state.get("system", {}).get("user_id", "")
+            patterns = state.get("learning", {}).get("patterns_detected", [])
+            extracted_facts = state.get("learning", {}).get("extracted_facts", [])
+
+            if user_id and patterns:
+                # Fetch existing patterns to avoid duplicates
+                existing = await self.memory.search_knowledge(
+                    query="behavior_pattern",
+                    user_id=user_id,
+                    top_k=50,
+                    topic_filter="behavior_pattern",
+                )
+                existing_contents = {c.get("content", "") for c in existing}
+
+                for pattern_str in patterns:
+                    # Derive pattern_type from the prefix (e.g. "Frequent action: ...")
+                    if ":" in pattern_str:
+                        pattern_type = pattern_str.split(":")[0].strip().lower().replace(" ", "_")
+                    else:
+                        pattern_type = "general"
+                    pattern_data = {"description": pattern_str}
+
+                    # Deduplication: skip if this exact content already stored
+                    candidate_content = f"[{pattern_type}] {json.dumps(pattern_data, default=str)}"
+                    if candidate_content in existing_contents:
+                        logger.info(f"Skipping duplicate pattern: {pattern_str}", event_type="pattern_dedup")
+                        continue
+
+                    await self.memory.store_behavior_pattern(user_id, pattern_type, pattern_data)
+
+                logger.info(
+                    f"Persisted {len(patterns)} learning patterns for user {user_id}",
+                    event_type="learning_persisted",
+                )
+
+            if user_id and extracted_facts:
+                stored = 0
+                for fact in extracted_facts:
+                    summary = str(fact.get("summary", "")).strip()
+                    value = str(fact.get("value", "")).strip()
+                    if not summary or not value:
+                        continue
+
+                    result = await self.memory.store_user_fact(
+                        user_id=user_id,
+                        summary=summary,
+                        key=str(fact.get("key", "fact")).strip() or "fact",
+                        value=value,
+                        topic=str(fact.get("topic", "preference")).strip() or "preference",
+                        confidence=float(fact.get("confidence", 0.7)),
+                    )
+                    if result.get("status") == "ok":
+                        stored += 1
+
+                state = add_log_entry(
+                    state,
+                    "learning",
+                    "facts_persisted",
+                    f"Stored {stored}/{len(extracted_facts)} extracted user facts",
+                )
+
         except Exception as e:
             logger.error(f"Learning node error: {e}", exc_info=True)
             state = add_log_entry(state, "learning", "error", str(e))
@@ -405,11 +520,14 @@ class JarvisWorkflow:
             "metadata": {
                 "request_type": system.get("request_type", ""),
                 "decision": planner.get("decision", ""),
+                "decision_explanation": planner.get("strategy", ""),
+                "reasoning_steps": planner.get("reasoning_steps", []),
                 "goal": planner.get("goal", ""),
                 "tools_used": [
                     tc.get("tool", "") for tc in execution.get("tool_calls", [])
                 ],
                 "patterns_detected": learning.get("patterns_detected", []),
+                "extracted_facts": learning.get("extracted_facts", []),
                 "total_time_ms": round(total_ms, 2),
             },
             "logs": state.get("logs", []),

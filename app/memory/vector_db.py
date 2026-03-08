@@ -41,40 +41,38 @@ class VectorDB:
     def _get_search_client(self):
         """Lazy-initialize the Azure Search client."""
         if self._client is None:
-            try:
-                from azure.search.documents import SearchClient
-                from azure.core.credentials import AzureKeyCredential
+            from azure.search.documents import SearchClient
+            from azure.core.credentials import AzureKeyCredential
 
-                self._client = SearchClient(
-                    endpoint=self.endpoint,
-                    index_name=self.index_name,
-                    credential=AzureKeyCredential(self.api_key),
+            if not self.endpoint or not self.api_key:
+                raise RuntimeError(
+                    "Azure AI Search credentials not configured. "
+                    "Set AZURE_SEARCH_ENDPOINT and AZURE_SEARCH_API_KEY."
                 )
-            except ImportError:
-                logger.warning("azure-search-documents not installed. Vector search will be unavailable.")
-                return None
-            except Exception as e:
-                logger.error(f"Failed to create search client: {e}", exc_info=True)
-                return None
+
+            self._client = SearchClient(
+                endpoint=self.endpoint,
+                index_name=self.index_name,
+                credential=AzureKeyCredential(self.api_key),
+            )
         return self._client
 
     def _get_index_client(self):
         """Lazy-initialize the Azure Search Index client."""
         if self._index_client is None:
-            try:
-                from azure.search.documents.indexes import SearchIndexClient
-                from azure.core.credentials import AzureKeyCredential
+            from azure.search.documents.indexes import SearchIndexClient
+            from azure.core.credentials import AzureKeyCredential
 
-                self._index_client = SearchIndexClient(
-                    endpoint=self.endpoint,
-                    credential=AzureKeyCredential(self.api_key),
+            if not self.endpoint or not self.api_key:
+                raise RuntimeError(
+                    "Azure AI Search credentials not configured. "
+                    "Set AZURE_SEARCH_ENDPOINT and AZURE_SEARCH_API_KEY."
                 )
-            except ImportError:
-                logger.warning("azure-search-documents not installed.")
-                return None
-            except Exception as e:
-                logger.error(f"Failed to create index client: {e}", exc_info=True)
-                return None
+
+            self._index_client = SearchIndexClient(
+                endpoint=self.endpoint,
+                credential=AzureKeyCredential(self.api_key),
+            )
         return self._index_client
 
     async def create_index(self):
@@ -91,14 +89,12 @@ class VectorDB:
                 SearchableField,
                 VectorSearch,
                 HnswAlgorithmConfiguration,
+                HnswParameters,
                 VectorSearchProfile,
                 SearchField as VectorField,
             )
 
             index_client = self._get_index_client()
-            if not index_client:
-                logger.warning("Index client not available. Skipping index creation.")
-                return
 
             fields = [
                 SimpleField(name="id", type=SearchFieldDataType.String, key=True, filterable=True),
@@ -122,7 +118,10 @@ class VectorDB:
 
             vector_search = VectorSearch(
                 algorithms=[
-                    HnswAlgorithmConfiguration(name="default-hnsw", parameters={"m": 4, "efConstruction": 400, "efSearch": 500}),
+                    HnswAlgorithmConfiguration(
+                        name="default-hnsw",
+                        parameters=HnswParameters(m=4, ef_construction=400, ef_search=500),
+                    ),
                 ],
                 profiles=[
                     VectorSearchProfile(name="default-vector-profile", algorithm_configuration_name="default-hnsw"),
@@ -133,8 +132,6 @@ class VectorDB:
             index_client.create_or_update_index(index)
             logger.info(f"Search index '{self.index_name}' created/updated successfully", event_type="index_created")
 
-        except ImportError:
-            logger.warning("Azure Search SDK not available. Index creation skipped.")
         except Exception as e:
             logger.error(f"Failed to create search index: {e}", exc_info=True)
 
@@ -158,9 +155,6 @@ class VectorDB:
             Number of chunks successfully indexed.
         """
         client = self._get_search_client()
-        if not client:
-            logger.warning("Search client not available. Storing chunks in fallback mode.")
-            return self._store_chunks_fallback(chunks)
 
         try:
             documents = []
@@ -197,7 +191,7 @@ class VectorDB:
 
         except Exception as e:
             logger.error(f"Failed to store chunks in Azure Search: {e}", exc_info=True)
-            return self._store_chunks_fallback(chunks)
+            raise
 
     async def search(
         self,
@@ -221,8 +215,6 @@ class VectorDB:
             List of matching document chunks with score and metadata.
         """
         client = self._get_search_client()
-        if not client:
-            return self._search_fallback(query, user_id, top_k)
 
         try:
             from azure.search.documents.models import VectorizedQuery
@@ -276,18 +268,13 @@ class VectorDB:
             )
             return search_results
 
-        except ImportError:
-            return self._search_fallback(query, user_id, top_k)
         except Exception as e:
             logger.error(f"Search failed: {e}", exc_info=True)
-            return self._search_fallback(query, user_id, top_k)
+            raise
 
     async def delete_document_chunks(self, document_id: str):
         """Delete all chunks belonging to a specific document."""
         client = self._get_search_client()
-        if not client:
-            self._delete_fallback(document_id)
-            return
 
         try:
             # Search for all chunks of this document
@@ -303,50 +290,3 @@ class VectorDB:
                 logger.info(f"Deleted {len(doc_ids)} chunks for document {document_id}")
         except Exception as e:
             logger.error(f"Failed to delete chunks: {e}", exc_info=True)
-
-    # ── Fallback: In-memory store for development without Azure ──
-
-    _fallback_store: List[Dict[str, Any]] = []
-
-    def _store_chunks_fallback(self, chunks: List[Dict[str, Any]]) -> int:
-        """Store chunks in local memory as fallback."""
-        for chunk in chunks:
-            entry = {
-                "id": str(uuid.uuid4()),
-                "document_id": chunk.get("document_id", ""),
-                "user_id": chunk.get("user_id", ""),
-                "content": chunk.get("content", ""),
-                "embedding": chunk.get("embedding", []),
-                "topic": chunk.get("topic", "general"),
-                "source_filename": chunk.get("source_filename", ""),
-                "chunk_index": chunk.get("chunk_index", 0),
-                "page_number": chunk.get("page_number", 0),
-                "section_heading": chunk.get("section_heading", ""),
-            }
-            VectorDB._fallback_store.append(entry)
-        logger.info(f"Stored {len(chunks)} chunks in fallback memory store")
-        return len(chunks)
-
-    def _search_fallback(self, query: str, user_id: str = "", top_k: int = 7) -> List[Dict[str, Any]]:
-        """Simple keyword search against the fallback store."""
-        query_lower = query.lower()
-        query_words = set(query_lower.split())
-
-        results = []
-        for chunk in VectorDB._fallback_store:
-            if user_id and chunk.get("user_id") != user_id:
-                continue
-            content_lower = chunk.get("content", "").lower()
-            # Score by number of matching words
-            score = sum(1 for word in query_words if word in content_lower)
-            if score > 0:
-                results.append({**chunk, "score": score})
-
-        results.sort(key=lambda x: x.get("score", 0), reverse=True)
-        return results[:top_k]
-
-    def _delete_fallback(self, document_id: str):
-        """Delete from fallback store."""
-        VectorDB._fallback_store = [
-            c for c in VectorDB._fallback_store if c.get("document_id") != document_id
-        ]

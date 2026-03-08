@@ -5,6 +5,7 @@ Provides JSON-structured logging with request tracing and agent decision logging
 
 import logging
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -44,7 +45,7 @@ class JSONFormatter(logging.Formatter):
 class AgentLogger:
     """
     Logger with built-in support for agent tracing, request correlation,
-    and structured metadata.
+    structured metadata, and optional Azure Application Insights export.
     """
 
     def __init__(self, name: str = "jarvis", level: str = "INFO"):
@@ -57,9 +58,33 @@ class AgentLogger:
             handler.setFormatter(JSONFormatter())
             self.logger.addHandler(handler)
 
+            # Optional: Azure Application Insights handler
+            self._attach_appinsights()
+
         self._request_id: str = ""
         self._user_id: str = ""
         self._agent_name: str = ""
+
+    @staticmethod
+    def _attach_appinsights():
+        """Attach Azure Monitor OpenTelemetry exporter if connection string is set."""
+        conn_str = os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING", "")
+        if not conn_str:
+            return
+        try:
+            from azure.monitor.opentelemetry.exporter import AzureMonitorLogExporter
+            from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+            from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+
+            exporter = AzureMonitorLogExporter(connection_string=conn_str)
+            provider = LoggerProvider()
+            provider.add_log_record_processor(BatchLogRecordProcessor(exporter))
+            az_handler = LoggingHandler(logger_provider=provider)
+            logging.getLogger("jarvis").addHandler(az_handler)
+        except ImportError:
+            pass  # azure-monitor-opentelemetry-exporter not installed
+        except Exception:
+            pass  # Non-critical — fall back to stdout logging
 
     def set_context(
         self,
@@ -172,6 +197,27 @@ class AgentLogger:
             f"State transition: {from_stage} → {to_stage}",
             event_type="state_transition",
             metadata={"from": from_stage, "to": to_stage},
+        )
+
+    def log_planner_decision(
+        self,
+        decision: str,
+        goal: str = "",
+        strategy: str = "",
+        tools_needed: list = None,
+        latency_ms: float = 0,
+    ):
+        """Log the planner's classification and strategy decision."""
+        self.info(
+            f"Planner decision: {decision}",
+            event_type="planner_decision",
+            metadata={
+                "decision": decision,
+                "goal": goal[:200] if goal else "",
+                "strategy": strategy[:300] if strategy else "",
+                "tools_needed": tools_needed or [],
+                "latency_ms": round(latency_ms, 2),
+            },
         )
 
 

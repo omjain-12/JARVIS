@@ -138,7 +138,7 @@ def main() -> None:
     if configured:
         logger.info(f"Azure services configured: {', '.join(configured)}")
     if missing:
-        logger.warning(f"Azure services NOT configured (will use fallbacks): {', '.join(missing)}")
+        logger.warning(f"Azure services NOT configured: {', '.join(missing)}")
 
     if args.cli:
         asyncio.run(interactive_cli())

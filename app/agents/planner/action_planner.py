@@ -13,40 +13,38 @@ import uuid
 from typing import Any, Dict, List
 
 from app.state.agent_state import AgentState, add_log_entry
+from app.utils.azure_llm import get_openai_client
 from app.utils.config import settings
 from app.utils.logger import get_logger
 
 logger = get_logger("action_planner")
 
-ACTION_PLANNER_PROMPT = """You are the Action Planner of JARVIS, an intelligent AI assistant.
+ACTION_PLANNER_PROMPT = """You are the Action Planner of JARVIS.
+Convert TASKS into TOOL CALL INSTRUCTIONS.
 
-Your role is to convert TASKS into TOOL CALL INSTRUCTIONS.
-
-## Available Tools:
+Available Tools:
 {tools_description}
 
-## Rules:
-- Each action must specify the exact tool name
-- All required parameters must be provided
-- If a task does NOT need a tool, set tool_name to "none"
-- Mark actions that could have side effects as requires_confirmation: true
+Rules:
+- Specify exact tool name and all required parameters
+- If no tool needed, set tool_name to "none"
+- Mark side-effect actions as requires_confirmation: true
+- For knowledge_store_tool memory saves, set requires_confirmation: false unless the user explicitly asked for confirmation.
+- Never alter user-provided literals such as email addresses, phone numbers, dates, times, URLs, or quoted text.
+- If the user provided an explicit recipient/contact value, copy it exactly into parameters.
 
-## Output Format:
-Respond with ONLY a valid JSON object:
-
-```json
+Respond with ONLY valid JSON:
 {{
     "actions": [
         {{
             "action_id": "unique_id",
-            "task_description": "What this action accomplishes",
+            "task_description": "what this action does",
             "tool_name": "tool_name or none",
             "parameters": {{}},
             "requires_confirmation": false
         }}
     ]
 }}
-```
 """
 
 
@@ -56,22 +54,12 @@ class ActionPlanner:
     """
 
     def __init__(self, tools_description: str = ""):
-        self._llm_client = None
         self.tools_description = tools_description
 
-    def _get_llm_client(self):
-        if self._llm_client is None:
-            try:
-                from openai import AzureOpenAI
-                self._llm_client = AzureOpenAI(
-                    azure_endpoint=settings.azure_openai.endpoint,
-                    api_key=settings.azure_openai.api_key,
-                    api_version=settings.azure_openai.api_version,
-                )
-            except Exception as e:
-                logger.warning(f"LLM client not available: {e}")
-                return None
-        return self._llm_client
+    @staticmethod
+    def _get_llm_client():
+        """Get the shared Azure OpenAI client from the central factory."""
+        return get_openai_client()
 
     async def plan_actions(self, state: AgentState) -> AgentState:
         """
@@ -152,12 +140,14 @@ class ActionPlanner:
             planner_output = state.get("planner_output", {})
             task_plan = state.get("task_plan", {})
             user_id = state.get("system", {}).get("user_id", "")
+            raw_input = state.get("user_request", {}).get("raw_input", "")
 
             user_message = f"""## Context:
 User ID: {user_id}
 Goal: {planner_output.get('goal', '')}
 Strategy: {planner_output.get('strategy', '')}
 Tools Needed: {json.dumps(planner_output.get('tools_needed', []))}
+Original User Request: {raw_input}
 
 ## Tasks to convert to actions:
 {json.dumps(task_plan.get('tasks', []), indent=2)}

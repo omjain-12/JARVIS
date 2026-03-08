@@ -72,7 +72,7 @@ class PlannerOutput(TypedDict, total=False):
     decision: str  # answer | plan | action
     context_needed: List[str]
     tools_needed: List[str]
-    output_format: str  # text | summary | flashcards | quiz | study_plan | action_result
+    output_format: str  # text | action_result
 
 
 class TaskPlan(TypedDict, total=False):
@@ -92,21 +92,22 @@ class ExecutionResult(TypedDict, total=False):
     tool_calls: List[Dict[str, Any]]
     # Each: { tool, parameters, status, result }
     execution_status: str  # pending | running | completed | failed
-    generated_output: Any  # The final generated content (summary, flashcards, etc.)
+    generated_output: Any  # The final generated content
 
 
 class LearningState(TypedDict, total=False):
     """Insights from the Learning/Behavior layer."""
     behavior_analysis: str
     patterns_detected: List[str]
+    extracted_facts: List[Dict[str, Any]]
     preference_updates: List[Dict[str, Any]]
 
 
 class ResponseState(TypedDict, total=False):
     """Final assembled response to the user."""
     final_output: str
-    response_format: str  # text | list | confirmation | action_result | flashcards | quiz | study_plan
-    structured_data: Any  # For structured outputs like flashcard JSON, quiz JSON, etc.
+    response_format: str  # text | action_result | confirmation_request
+    structured_data: Any  # For structured outputs (tool results, etc.)
 
 
 class LogEntry(TypedDict, total=False):
@@ -220,6 +221,7 @@ def create_initial_state(
         learning=LearningState(
             behavior_analysis="",
             patterns_detected=[],
+            extracted_facts=[],
             preference_updates=[],
         ),
         response=ResponseState(

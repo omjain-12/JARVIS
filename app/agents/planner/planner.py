@@ -16,6 +16,7 @@ import time
 from typing import Any, Dict
 
 from app.state.agent_state import AgentState, add_log_entry
+from app.utils.azure_llm import get_openai_client
 from app.utils.config import settings
 from app.utils.logger import get_logger
 
@@ -23,48 +24,34 @@ logger = get_logger("planner")
 
 # ── Planner System Prompt ──
 
-PLANNER_SYSTEM_PROMPT = """You are the Planner Agent of JARVIS, an intelligent personal AI assistant.
+PLANNER_SYSTEM_PROMPT = """You are the Planner of JARVIS, a personal AI assistant.
+Analyze the request and produce a strategy. Do NOT execute actions.
 
-Your role is to ANALYZE the user's request and produce a STRATEGY. You do NOT execute actions.
+Request Types:
+- reasoning: analysis, explanation, insight (no tools)
+- planning: plan, schedule, organized response
+- action: real-world action or memory-write action (email, reminder, habit, storing user info)
 
-## Your Responsibilities:
-1. Understand what the user wants
-2. Analyze the retrieved context
-3. Classify the request type
-4. Create a step-by-step strategy
-5. Decide what tools are needed (if any)
-6. Decide the output format
-
-## Request Types:
-- "reasoning" — The user wants analysis, explanation, or insight. No tools needed.
-- "planning" — The user wants a plan, schedule, or structured output (flashcards, quiz, study plan, summary).
-- "action" — The user wants to perform a real-world action (send email, set reminder, log habit).
-
-## Available Tools:
+Available Tools:
 {tools_description}
 
-## Output Format:
-You MUST respond with ONLY a valid JSON object. No markdown, no explanation outside the JSON.
-
-```json
+Respond with ONLY valid JSON:
 {{
-    "goal": "One sentence describing what the user wants",
+    "goal": "what the user wants",
     "request_type": "reasoning | planning | action",
-    "strategy": "Brief description of the approach",
-    "reasoning_steps": ["step 1", "step 2", "step 3"],
+    "strategy": "approach description",
+    "reasoning_steps": ["step 1", "step 2"],
     "decision": "answer | plan | action",
-    "context_needed": ["list of topics or data points needed"],
-    "tools_needed": ["list of tool names needed, empty if none"],
-    "output_format": "text | summary | flashcards | quiz | study_plan | action_result"
+    "tools_needed": [],
+    "output_format": "text | action_result"
 }}
-```
 
-## Rules:
-- NEVER fabricate information. Only use what is in the retrieved context.
-- If you don't have enough context, set decision to "answer" and explain what's missing.
-- For action requests, always list the specific tools needed.
-- Be precise and structured in your reasoning steps.
-- If the user is asking a simple question, keep the strategy simple.
+Rules:
+- Only use retrieved context. Never fabricate.
+- If context is insufficient, decision=answer and explain.
+- For actions, list specific tools needed.
+- If user says "remember", "save this", "note this", or shares personal details/preferences for future use, choose request_type=action and include knowledge_store_tool in tools_needed.
+- Preserve user-provided literals exactly (emails, phone numbers, dates, times, URLs, quoted values). Never rewrite them.
 """
 
 
@@ -77,23 +64,12 @@ class PlannerAgent:
     """
 
     def __init__(self, tools_description: str = ""):
-        self._llm_client = None
         self.tools_description = tools_description
 
-    def _get_llm_client(self):
-        """Lazy-initialize Azure OpenAI client."""
-        if self._llm_client is None:
-            try:
-                from openai import AzureOpenAI
-                self._llm_client = AzureOpenAI(
-                    azure_endpoint=settings.azure_openai.endpoint,
-                    api_key=settings.azure_openai.api_key,
-                    api_version=settings.azure_openai.api_version,
-                )
-            except Exception as e:
-                logger.warning(f"LLM client not available: {e}")
-                return None
-        return self._llm_client
+    @staticmethod
+    def _get_llm_client():
+        """Get the shared Azure OpenAI client from the central factory."""
+        return get_openai_client()
 
     def _build_context_summary(self, state: AgentState) -> str:
         """Build a text summary of the retrieved context for the LLM."""
@@ -113,8 +89,29 @@ class PlannerAgent:
         if sm.get("goals"):
             parts.append(f"Goals: {json.dumps(sm['goals'][:3], default=str)}")
 
-        # Vector memory — knowledge chunks
+        # User preferences and learned facts
+        if sm.get("preferences"):
+            prefs = sm["preferences"]
+            prefs_dict = prefs[0] if isinstance(prefs, list) and prefs else prefs
+            if isinstance(prefs_dict, dict):
+                profile = prefs_dict.get("profile", {})
+                if profile:
+                    parts.append(f"User profile: {json.dumps(profile, default=str)}")
+        learned_facts = sm.get("learned_facts", [])
+        if learned_facts:
+            fact_lines = [f"- {f.get('summary', '')}" for f in learned_facts[-10:] if isinstance(f, dict)]
+            if fact_lines:
+                parts.append("Learned user facts:\n" + "\n".join(fact_lines))
+
+        # Behavior patterns from vector memory
         vm = context.get("vector_memory", {})
+        behavior_patterns = vm.get("behavior_patterns", [])
+        if behavior_patterns:
+            pattern_lines = [f"- {p.get('content', '')}" for p in behavior_patterns[:10]]
+            if pattern_lines:
+                parts.append("Detected behavior patterns:\n" + "\n".join(pattern_lines))
+
+        # Knowledge chunks
         chunks = vm.get("knowledge_chunks", [])
         if chunks:
             chunk_texts = []
@@ -198,6 +195,10 @@ Analyze this request and produce your strategy as a JSON object."""
         # Determine if confirmation is needed (for action requests)
         requires_confirmation = strategy.get("request_type") == "action"
 
+        # Clamp output_format to allowed values
+        raw_format = strategy.get("output_format", "text")
+        output_format = raw_format if raw_format in ("text", "action_result") else "text"
+
         # Update state
         planner_output = {
             "goal": strategy.get("goal", query),
@@ -206,7 +207,7 @@ Analyze this request and produce your strategy as a JSON object."""
             "decision": strategy.get("decision", "answer"),
             "context_needed": strategy.get("context_needed", []),
             "tools_needed": strategy.get("tools_needed", []),
-            "output_format": strategy.get("output_format", "text"),
+            "output_format": output_format,
         }
 
         system = {
@@ -223,6 +224,13 @@ Analyze this request and produce your strategy as a JSON object."""
         )
 
         duration_ms = (time.time() - start_time) * 1000
+        logger.log_planner_decision(
+            decision=planner_output["decision"],
+            goal=planner_output["goal"],
+            strategy=planner_output["strategy"],
+            tools_needed=planner_output.get("tools_needed", []),
+            latency_ms=duration_ms,
+        )
         logger.log_agent_end("planner", f"Decision: {planner_output['decision']}", duration_ms)
 
         return state

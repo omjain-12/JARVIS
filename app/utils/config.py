@@ -66,6 +66,33 @@ class DatabaseConfig(BaseSettings):
         extra = "ignore"
 
 
+class WhapiConfig(BaseSettings):
+    """Whapi (WhatsApp API) configuration."""
+    token: str = Field(default="", alias="WHAPI_TOKEN")
+    base_url: str = Field(default="https://gate.whapi.cloud/messages/text", alias="WHAPI_BASE_URL")
+    default_country_code: str = Field(default="91", alias="WHAPI_DEFAULT_COUNTRY_CODE")
+    timeout_seconds: int = Field(default=30, alias="WHAPI_TIMEOUT_SECONDS")
+    max_retries: int = Field(default=2, alias="WHAPI_MAX_RETRIES")
+
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
+
+
+class TwilioConfig(BaseSettings):
+    """Twilio SMS configuration."""
+    account_sid: str = Field(default="", alias="TWILIO_ACCOUNT_SID")
+    auth_token: str = Field(default="", alias="TWILIO_AUTH_TOKEN")
+    from_number: str = Field(default="", alias="TWILIO_FROM_NUMBER")
+    messaging_service_sid: str = Field(default="", alias="TWILIO_MESSAGING_SERVICE_SID")
+    default_country_code: str = Field(default="91", alias="TWILIO_DEFAULT_COUNTRY_CODE")
+    simulate: bool = Field(default=False, alias="TWILIO_SIMULATE")
+
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
+
+
 class AppConfig(BaseSettings):
     """Application-level configuration."""
     app_name: str = Field(default="JARVIS AI System", alias="APP_NAME")
@@ -81,6 +108,7 @@ class AppConfig(BaseSettings):
     chunk_size: int = Field(default=500, alias="CHUNK_SIZE")
     chunk_overlap: int = Field(default=100, alias="CHUNK_OVERLAP")
     top_k_results: int = Field(default=7, alias="TOP_K_RESULTS")
+    appinsights_connection_string: str = Field(default="", alias="APPLICATIONINSIGHTS_CONNECTION_STRING")
 
     class Config:
         env_file = ".env"
@@ -97,6 +125,8 @@ class Settings:
         self.azure_blob = AzureBlobConfig()
         self.azure_doc_intelligence = AzureDocIntelligenceConfig()
         self.database = DatabaseConfig()
+        self.whapi = WhapiConfig()
+        self.twilio = TwilioConfig()
 
     def validate_azure_services(self) -> dict:
         """Check which Azure services are configured and return status."""

@@ -1,6 +1,7 @@
 version: "3.9"
 
 services:
+  # ── Original API (auth, documents, tasks, habits) ──
   jarvis:
     build: .
     container_name: jarvis-api
@@ -12,6 +13,38 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:///data/jarvis.db
     volumes:
       - jarvis-data:/app/data
+    restart: unless-stopped
+
+  # ── Backend API for the assistant UI (chat, voice, confirm) ──
+  jarvis-backend:
+    build: .
+    container_name: jarvis-backend
+    command: ["python", "-m", "uvicorn", "backend.api.server:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=sqlite+aiosqlite:///data/jarvis.db
+    volumes:
+      - jarvis-data:/app/data
+    depends_on:
+      - jarvis
+    restart: unless-stopped
+
+  # ── Frontend (Next.js) ──
+  jarvis-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: jarvis-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://jarvis-backend:8001
+      - BACKEND_API_URL=http://jarvis-backend:8001
+    depends_on:
+      - jarvis-backend
     restart: unless-stopped
 
 volumes:
