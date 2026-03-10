@@ -1,9 +1,4 @@
-"""
-Task Decomposer — converts a Planner strategy into concrete tasks.
-
-Takes the high-level strategy from the Planner and breaks it down into
-specific, ordered, actionable tasks that the Executor can work on.
-"""
+"""Task Decomposer — converts a Planner strategy into concrete tasks."""
 
 from __future__ import annotations
 
@@ -56,18 +51,7 @@ class TaskDecomposer:
         return get_openai_client()
 
     async def decompose(self, state: AgentState) -> AgentState:
-        """
-        Decompose the planner strategy into tasks.
-
-        For simple reasoning requests, creates a single "generate response" task.
-        For complex planning/action requests, uses the LLM to decompose.
-
-        Args:
-            state: Current AgentState with planner_output populated.
-
-        Returns:
-            Updated AgentState with task_plan populated.
-        """
+        """Decompose the planner strategy into tasks."""
         logger.set_context(
             request_id=state.get("system", {}).get("request_id", ""),
             user_id=state.get("system", {}).get("user_id", ""),

@@ -1,19 +1,4 @@
-"""
-JARVIS AI Second Brain — Application Entry Point.
-
-Starts the FastAPI server with uvicorn and optionally runs
-an interactive CLI mode for local testing.
-
-Usage:
-    # Start the API server (default)
-    python main.py
-
-    # Start with custom host/port
-    HOST=127.0.0.1 PORT=9000 python main.py
-
-    # Interactive CLI mode (no server)
-    python main.py --cli
-"""
+"""JARVIS AI Second Brain — Application Entry Point."""
 
 from __future__ import annotations
 
@@ -50,14 +35,10 @@ def start_server() -> None:
 
 
 async def interactive_cli() -> None:
-    """
-    Simple interactive loop for testing the pipeline without the API server.
-
-    Type your query, press Enter. Type 'exit' or 'quit' to stop.
-    """
+    """Simple interactive loop for testing the pipeline without the API server."""
     from app.graph.workflow import build_workflow
 
-    print("\n🧠 JARVIS AI Second Brain — Interactive CLI")
+    print("\n[ JARVIS AI Second Brain — Interactive CLI ]")
     print("=" * 50)
     print("Type a question or command. Type 'exit' to quit.\n")
 
@@ -77,32 +58,32 @@ async def interactive_cli() -> None:
             if not user_input:
                 continue
             if user_input.lower() in {"exit", "quit", "q"}:
-                print("\nGoodbye! 👋")
+                print("\nGoodbye!")
                 break
 
             result = await wf.run(user_input, user_id=user_id, session_id=session_id)
 
             # Display response
-            status_icon = "✅" if result["status"] == "success" else "❌"
+            status_icon = "[SUCCESS]" if result["status"] == "success" else "[ERROR]"
             print(f"\n{status_icon} JARVIS [{result['metadata'].get('request_type', '')}]:")
             print("-" * 40)
             print(result["response"]["text"])
-
+            
             # Show structured data if present
             structured = result["response"].get("structured_data")
             if structured:
-                print(f"\n📦 Structured data: {type(structured).__name__}")
+                print(f"\n* Structured data: {type(structured).__name__}")
 
             # Show metadata
             tools = result["metadata"].get("tools_used", [])
             if tools:
-                print(f"🔧 Tools used: {', '.join(tools)}")
+                print(f"* Tools used: {', '.join(tools)}")
 
             patterns = result["metadata"].get("patterns_detected", [])
             if patterns:
-                print(f"📊 Patterns: {', '.join(patterns)}")
+                print(f"* Patterns: {', '.join(patterns)}")
 
-            print(f"⏱  {result['metadata'].get('total_time_ms', 0):.0f}ms")
+            print(f"* Latency: {result['metadata'].get('total_time_ms', 0):.0f}ms")
             print()
 
     finally:

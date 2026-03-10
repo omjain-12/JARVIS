@@ -1,6 +1,4 @@
-"""
-Reminder Tool — creates and manages scheduled reminders in the database.
-"""
+"""Reminder Tool — creates and manages scheduled reminders in the database."""
 
 from __future__ import annotations
 
@@ -27,18 +25,7 @@ async def create_reminder(
     message: str = "",
     remind_at: str = "",
 ) -> Dict[str, Any]:
-    """
-    Create a new reminder for the user.
-
-    Args:
-        user_id: The user ID.
-        title: Reminder title.
-        message: Reminder message/details.
-        remind_at: ISO format datetime string for when to trigger the reminder.
-
-    Returns:
-        Dict with status and reminder details.
-    """
+    """Create a new reminder for the user."""
     try:
         if not title:
             return {"status": "error", "message": "Reminder title is required."}

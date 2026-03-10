@@ -1,13 +1,4 @@
-"""
-Retriever Agent — responsible for memory access and context assembly.
-
-The Retriever:
-1. Receives the user query from the pipeline
-2. Performs query expansion using the LLM
-3. Queries both vector and structured memory
-4. Assembles a ranked context package
-5. Stores the context in the agent state
-"""
+"""Retriever Agent — responsible for memory access and context assembly."""
 
 from __future__ import annotations
 
@@ -26,15 +17,7 @@ logger = get_logger("retriever")
 
 
 class RetrieverAgent:
-    """
-    The Retriever Agent fetches relevant context from memory systems.
-
-    It performs:
-    - Query expansion (generate alternative search terms)
-    - Vector search (semantic similarity)
-    - Structured data retrieval (tasks, habits, documents, etc.)
-    - Context assembly and ranking
-    """
+    """The Retriever Agent fetches relevant context from memory systems."""
 
     def __init__(self, memory_manager: MemoryManager):
         self.memory = memory_manager
@@ -45,12 +28,7 @@ class RetrieverAgent:
         return get_openai_client()
 
     async def expand_query(self, query: str) -> List[str]:
-        """
-        Use the LLM to generate expanded search queries for better retrieval.
-
-        Given "neural networks", might produce:
-        ["neural networks", "deep learning", "artificial neurons", "backpropagation"]
-        """
+        """Use the LLM to generate expanded search queries for better retrieval."""
         client = self._get_llm_client()
         if not client:
             raise RuntimeError("Azure OpenAI client not available for query expansion")
@@ -88,22 +66,7 @@ class RetrieverAgent:
         return [query]
 
     async def retrieve(self, state: AgentState) -> AgentState:
-        """
-        Main retrieval pipeline — the workflow graph node function.
-
-        Steps:
-        1. Extract query from state
-        2. Expand the query
-        3. Search vector database with expanded queries
-        4. Retrieve structured data
-        5. Assemble and store context in state
-
-        Args:
-            state: The current AgentState.
-
-        Returns:
-            Updated AgentState with memory_context populated.
-        """
+        """Main retrieval pipeline — the workflow graph node function."""
         logger.set_context(
             request_id=state.get("system", {}).get("request_id", ""),
             user_id=state.get("system", {}).get("user_id", ""),
@@ -120,9 +83,14 @@ class RetrieverAgent:
 
         state = add_log_entry(state, "retriever", "retrieval_start", f"Query: {query[:100]}")
 
-        # 1. Query Expansion
-        expanded_queries = await self.expand_query(query)
-        state = add_log_entry(state, "retriever", "query_expanded", f"Expanded to {len(expanded_queries)} queries")
+        # 1. Query Expansion — skip for short/simple queries to save an LLM call
+        word_count = len(query.split())
+        if word_count <= 8:
+            expanded_queries = [query]
+            state = add_log_entry(state, "retriever", "query_expansion_skipped", "Short query, using original")
+        else:
+            expanded_queries = await self.expand_query(query)
+            state = add_log_entry(state, "retriever", "query_expanded", f"Expanded to {len(expanded_queries)} queries")
 
         # 2. Vector Search — search with all expanded queries and deduplicate
         all_chunks = []
@@ -197,10 +165,7 @@ class RetrieverAgent:
         return state
 
     def _guard_context_window(self, context: Dict[str, Any], max_chars: int = 50000) -> Dict[str, Any]:
-        """
-        Ensure the total context size doesn't exceed the model's context window.
-        Trims lower-ranked chunks if necessary.
-        """
+        """Ensure the total context size doesn't exceed the model's context window."""
         total_chars = 0
 
         # Count structured memory size

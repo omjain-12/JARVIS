@@ -1,11 +1,4 @@
-"""
-Structured Database — SQLAlchemy-based relational storage for JARVIS.
-
-Manages all structured entities: users, documents, tasks, reminders,
-habits, contacts, calendar events, preferences, goals, and conversations.
-
-Uses async SQLAlchemy with aiosqlite (local) or asyncpg (production PostgreSQL).
-"""
+"""Structured Database — SQLAlchemy-based relational storage for JARVIS."""
 
 from __future__ import annotations
 
@@ -215,10 +208,7 @@ class ConversationHistory(Base):
 
 
 class StructuredDB:
-    """
-    Async database manager for structured storage.
-    Provides methods for CRUD operations on all entities.
-    """
+    """Async database manager for structured storage."""
 
     def __init__(self, database_url: str = ""):
         self.database_url = database_url or settings.database.database_url
@@ -428,13 +418,90 @@ class StructuredDB:
 
     # ── Contact Operations ──
 
+    async def create_contact(self, user_id: str, name: str, email: str = "",
+                             phone: str = "", relationship: str = "",
+                             notes: str = "") -> Dict[str, Any]:
+        async with self.async_session() as session:
+            contact = Contact(
+                user_id=user_id, name=name, email=email,
+                phone=phone, relationship_=relationship, notes=notes,
+            )
+            session.add(contact)
+            await session.commit()
+            await session.refresh(contact)
+            return {
+                "id": contact.id, "name": contact.name,
+                "email": contact.email, "phone": contact.phone,
+                "relationship": contact.relationship_,
+                "notes": contact.notes,
+                "created_at": contact.created_at.isoformat() if contact.created_at else "",
+            }
+
+    async def update_contact(self, contact_id: str, name: str = None,
+                             email: str = None, phone: str = None,
+                             relationship: str = None,
+                             notes: str = None) -> Dict[str, Any]:
+        from sqlalchemy import select
+        async with self.async_session() as session:
+            result = await session.execute(select(Contact).where(Contact.id == contact_id))
+            contact = result.scalar_one_or_none()
+            if not contact:
+                raise ValueError(f"Contact not found: {contact_id}")
+            if name is not None:
+                contact.name = name
+            if email is not None:
+                contact.email = email
+            if phone is not None:
+                contact.phone = phone
+            if relationship is not None:
+                contact.relationship_ = relationship
+            if notes is not None:
+                contact.notes = notes
+            await session.commit()
+            return {
+                "id": contact.id, "name": contact.name,
+                "email": contact.email, "phone": contact.phone,
+                "relationship": contact.relationship_,
+                "notes": contact.notes,
+            }
+
+    async def delete_contact(self, contact_id: str) -> None:
+        from sqlalchemy import delete
+        async with self.async_session() as session:
+            await session.execute(delete(Contact).where(Contact.id == contact_id))
+            await session.commit()
+
+    async def lookup_contact_by_name(self, user_id: str, name: str) -> Optional[Dict[str, Any]]:
+        """Look up a contact by name (case-insensitive partial match)."""
+        from sqlalchemy import select, func
+        async with self.async_session() as session:
+            result = await session.execute(
+                select(Contact)
+                .where(Contact.user_id == user_id)
+                .where(func.lower(Contact.name).contains(name.lower()))
+            )
+            contact = result.scalar_one_or_none()
+            if contact:
+                return {
+                    "id": contact.id, "name": contact.name,
+                    "email": contact.email, "phone": contact.phone,
+                    "relationship": contact.relationship_,
+                    "notes": contact.notes,
+                }
+            return None
+
     async def get_contacts(self, user_id: str) -> List[Dict[str, Any]]:
         from sqlalchemy import select
         async with self.async_session() as session:
             result = await session.execute(select(Contact).where(Contact.user_id == user_id))
             contacts = result.scalars().all()
             return [
-                {"id": c.id, "name": c.name, "email": c.email, "phone": c.phone}
+                {
+                    "id": c.id, "name": c.name, "email": c.email,
+                    "phone": c.phone, "relationship": c.relationship_,
+                    "notes": c.notes,
+                    "created_at": c.created_at.isoformat() if c.created_at else "",
+                }
                 for c in contacts
             ]
 

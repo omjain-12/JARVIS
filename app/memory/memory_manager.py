@@ -1,10 +1,4 @@
-"""
-Memory Manager — unified interface for both structured and vector memory systems.
-
-The Memory Manager provides a single entry point for all memory operations.
-It coordinates between the structured database (SQLAlchemy) and the vector
-database (Azure AI Search) to assemble complete context packages for agents.
-"""
+"""Memory Manager — unified interface for both structured and vector memory systems."""
 
 from __future__ import annotations
 
@@ -21,12 +15,7 @@ logger = get_logger("memory_manager")
 
 
 class MemoryManager:
-    """
-    Unified memory interface that coordinates:
-    - Structured DB (tasks, reminders, habits, documents, etc.)
-    - Vector DB (knowledge chunks, semantic search)
-    - Embedding generation via Azure OpenAI
-    """
+    """Unified memory interface."""
 
     def __init__(self):
         self.structured_db = StructuredDB()
@@ -59,15 +48,7 @@ class MemoryManager:
         return self._embedding_client
 
     async def generate_embedding(self, text: str) -> List[float]:
-        """
-        Generate an embedding vector for the given text using Azure OpenAI.
-
-        Args:
-            text: The text to embed.
-
-        Returns:
-            A list of floats representing the embedding vector.
-        """
+        """Generate an embedding vector for the given text using Azure OpenAI."""
         client = self._get_embedding_client()
 
         start = time.time()
@@ -96,18 +77,7 @@ class MemoryManager:
         user_id: str,
         source_filename: str,
     ) -> int:
-        """
-        Generate embeddings for chunks and store them in the vector database.
-
-        Args:
-            chunks: List of dicts with 'content' and optional metadata.
-            document_id: The parent document ID.
-            user_id: The owning user ID.
-            source_filename: Original filename.
-
-        Returns:
-            Number of chunks successfully stored.
-        """
+        """Generate embeddings for chunks and store them in the vector database."""
         enriched_chunks = []
         for i, chunk in enumerate(chunks):
             content = chunk.get("content", "")
@@ -143,18 +113,7 @@ class MemoryManager:
         top_k: int = 0,
         topic_filter: str = "",
     ) -> List[Dict[str, Any]]:
-        """
-        Search the vector database for relevant knowledge chunks.
-
-        Args:
-            query: Natural language query.
-            user_id: Scope results to this user.
-            top_k: Number of results (defaults to config value).
-            topic_filter: Optional topic filter.
-
-        Returns:
-            List of matching chunks with content and metadata.
-        """
+        """Search the vector database for relevant knowledge chunks."""
         if not top_k:
             top_k = settings.app.top_k_results
 
@@ -178,17 +137,7 @@ class MemoryManager:
     # ── Context Assembly ──
 
     async def assemble_context(self, user_id: str, query: str = "") -> Dict[str, Any]:
-        """
-        Assemble a comprehensive context package for the agents.
-        Combines structured data and vector search results.
-
-        Args:
-            user_id: The user to scope data to.
-            query: Optional query for relevance-based vector retrieval.
-
-        Returns:
-            A context dict matching the MemoryContext state shape.
-        """
+        """Assemble a comprehensive context package for the agents."""
         # Structured data retrieval
         tasks = await self.structured_db.get_tasks(user_id)
         reminders = await self.structured_db.get_reminders(user_id)
@@ -326,19 +275,7 @@ class MemoryManager:
     # ── Unified API ──
 
     async def get_user_context(self, user_id: str, query: str = "") -> Dict[str, Any]:
-        """
-        Retrieve the full user context for agents.
-
-        Combines structured data (tasks, reminders, habits, etc.) and
-        vector search results into a single context package.
-
-        Args:
-            user_id: The user to scope data to.
-            query: Optional query for relevance-based vector retrieval.
-
-        Returns:
-            A context dict matching the MemoryContext state shape.
-        """
+        """Retrieve the full user context for agents."""
         return await self.assemble_context(user_id, query)
 
     async def store_memory(
@@ -348,22 +285,7 @@ class MemoryManager:
         memory_type: str = "knowledge",
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """
-        Store a memory entry in the appropriate backend.
-
-        For 'knowledge' type, content is embedded and stored in the vector DB.
-        For structured types ('task', 'reminder', 'habit'), delegates to the
-        structured DB.
-
-        Args:
-            user_id: Owning user ID.
-            content: The text content to store.
-            memory_type: 'knowledge' | 'task' | 'reminder' | 'habit'.
-            metadata: Additional metadata (title, remind_at, etc.).
-
-        Returns:
-            A dict with the storage result.
-        """
+        """Store a memory entry in the appropriate backend."""
         metadata = metadata or {}
 
         if memory_type == "knowledge":
@@ -405,17 +327,7 @@ class MemoryManager:
         pattern_type: str,
         pattern_data: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """
-        Persist a detected behavior pattern to the vector store.
-
-        Args:
-            user_id: Owning user ID.
-            pattern_type: Category (e.g. 'time_preference', 'habit_streak', 'missed_reminder').
-            pattern_data: Arbitrary dict describing the pattern.
-
-        Returns:
-            A dict with the storage result.
-        """
+        """Persist a detected behavior pattern to the vector store."""
         import json as _json
 
         content = f"[{pattern_type}] {_json.dumps(pattern_data, default=str)}"

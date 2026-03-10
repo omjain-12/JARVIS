@@ -1,12 +1,4 @@
-"""
-Central Azure OpenAI LLM factory — single source of truth for all LLM clients.
-
-All agents that need an LLM (Planner, Executor, TaskDecomposer, ActionPlanner,
-Retriever) import from here instead of creating their own clients.
-
-Provides:
-- AzureOpenAI (openai SDK) for structured JSON calls
-"""
+"""Central Azure OpenAI LLM factory — single source of truth for all LLM clients."""
 
 from __future__ import annotations
 
@@ -24,12 +16,7 @@ _openai_client = None
 
 
 def _normalize_azure_endpoint(endpoint: str) -> str:
-    """Return the base Azure endpoint expected by AzureOpenAI SDK.
-
-    Users often paste a full REST URL (with /openai/deployments/.../chat/completions
-    and query params). The SDK requires only scheme+host, e.g.
-    https://<resource>.openai.azure.com
-    """
+    """Return the base Azure endpoint expected by AzureOpenAI SDK."""
     if not endpoint:
         return endpoint
 
@@ -41,11 +28,7 @@ def _normalize_azure_endpoint(endpoint: str) -> str:
 
 
 def get_openai_client():
-    """
-    Return a shared AzureOpenAI client (openai SDK) for structured JSON calls.
-
-    Used by agents that need response_format=json_object or fine-grained control.
-    """
+    """Return a shared AzureOpenAI client (openai SDK) for structured JSON calls."""
     global _openai_client
     if _openai_client is not None:
         return _openai_client

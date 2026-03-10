@@ -1,12 +1,4 @@
-"""
-Vector Database — Azure AI Search integration for semantic knowledge retrieval.
-
-Handles:
-- Index creation and management
-- Document chunk embedding and storage
-- Hybrid search (vector + keyword)
-- Semantic retrieval with filtering
-"""
+"""Vector Database — Azure AI Search integration for semantic knowledge retrieval."""
 
 from __future__ import annotations
 
@@ -21,15 +13,7 @@ logger = get_logger("vector_db")
 
 
 class VectorDB:
-    """
-    Azure AI Search vector database client.
-
-    Provides methods to:
-    - Create and manage the knowledge index
-    - Store document chunks with embeddings
-    - Perform hybrid search (keyword + vector similarity)
-    - Filter results by user_id for data isolation
-    """
+    """Azure AI Search vector database client."""
 
     def __init__(self):
         self.endpoint = settings.azure_search.endpoint
@@ -76,10 +60,7 @@ class VectorDB:
         return self._index_client
 
     async def create_index(self):
-        """
-        Create the knowledge search index in Azure AI Search if it doesn't exist.
-        Defines the schema with vector fields for embedding search.
-        """
+        """Create the knowledge search index in Azure AI Search if it doesn't exist."""
         try:
             from azure.search.documents.indexes.models import (
                 SearchIndex,
@@ -136,24 +117,7 @@ class VectorDB:
             logger.error(f"Failed to create search index: {e}", exc_info=True)
 
     async def store_chunks(self, chunks: List[Dict[str, Any]]) -> int:
-        """
-        Store document chunks with embeddings in the search index.
-
-        Args:
-            chunks: List of chunk dicts with keys:
-                - content: str
-                - embedding: List[float]
-                - document_id: str
-                - user_id: str
-                - chunk_index: int
-                - source_filename: str
-                - topic: str (optional)
-                - page_number: int (optional)
-                - section_heading: str (optional)
-
-        Returns:
-            Number of chunks successfully indexed.
-        """
+        """Store document chunks with embeddings in the search index."""
         client = self._get_search_client()
 
         try:
@@ -201,19 +165,7 @@ class VectorDB:
         top_k: int = 7,
         topic_filter: str = "",
     ) -> List[Dict[str, Any]]:
-        """
-        Perform hybrid search (keyword + vector) against the knowledge index.
-
-        Args:
-            query: The text query for keyword search.
-            query_embedding: The query embedding vector for similarity search.
-            user_id: Filter results to this user.
-            top_k: Number of results to return.
-            topic_filter: Optional topic filter.
-
-        Returns:
-            List of matching document chunks with score and metadata.
-        """
+        """Perform hybrid search (keyword + vector) against the knowledge index."""
         client = self._get_search_client()
 
         try:

@@ -1,13 +1,4 @@
-"""
-Planner Agent — the reasoning brain of the system.
-
-The Planner:
-1. Analyzes the user request + retrieved context
-2. Classifies the request type (reasoning, planning, action)
-3. Produces a strategy with reasoning steps
-4. Decides what output format is needed
-5. Does NOT execute actions directly
-"""
+"""Planner Agent — the reasoning brain of the system."""
 
 from __future__ import annotations
 
@@ -56,12 +47,7 @@ Rules:
 
 
 class PlannerAgent:
-    """
-    The Planner Agent — produces strategies for handling user requests.
-
-    The Planner uses Azure OpenAI to reason about the user's intent,
-    the available context, and the best approach to fulfill the request.
-    """
+    """The Planner Agent — produces strategies for handling user requests."""
 
     def __init__(self, tools_description: str = ""):
         self.tools_description = tools_description
@@ -135,21 +121,7 @@ class PlannerAgent:
         return "\n\n".join(parts) if parts else "No context available."
 
     async def plan(self, state: AgentState) -> AgentState:
-        """
-        Main planning pipeline — the workflow graph node function.
-
-        Steps:
-        1. Build context summary from retrieved memory
-        2. Call LLM with planner prompt
-        3. Parse and validate the strategy output
-        4. Store the strategy in state
-
-        Args:
-            state: Current AgentState with memory_context populated.
-
-        Returns:
-            Updated AgentState with planner_output populated.
-        """
+        """Main planning pipeline — the workflow graph node function."""
         logger.set_context(
             request_id=state.get("system", {}).get("request_id", ""),
             user_id=state.get("system", {}).get("user_id", ""),

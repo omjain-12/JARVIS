@@ -1,10 +1,9 @@
-"""
-Agent service — thin wrapper that calls the JarvisWorkflow from the API layer.
-"""
+"""Agent service — thin wrapper that calls the JarvisWorkflow from the API layer."""
 
 from __future__ import annotations
 
-from typing import Any, Dict
+import asyncio
+from typing import Any, AsyncIterator, Dict
 
 from app.graph.workflow import JarvisWorkflow, build_workflow
 from app.utils.logger import get_logger
@@ -29,11 +28,7 @@ async def run_agent(
     message: str,
     session_id: str = "",
 ) -> Dict[str, Any]:
-    """
-    Send a user message through the LangGraph agent pipeline.
-
-    Returns the standardised response dict produced by JarvisWorkflow.run().
-    """
+    """Send a user message through the LangGraph agent pipeline."""
     wf = await get_workflow()
     result = await wf.run(
         user_input=message,
@@ -41,6 +36,30 @@ async def run_agent(
         session_id=session_id,
     )
     return result
+
+
+async def run_agent_stream(
+    user_id: str,
+    message: str,
+    session_id: str = "",
+) -> AsyncIterator[str]:
+    """Stream assistant text in small chunks for realtime UI updates."""
+    result = await run_agent(user_id=user_id, message=message, session_id=session_id)
+    text = result.get("response", {}).get("text", "")
+    if not text:
+        return
+
+    words = text.split()
+    if not words:
+        yield text
+        return
+
+    # Yield words in small batches for a natural streaming feel
+    batch_size = 3
+    for i in range(0, len(words), batch_size):
+        batch = " ".join(words[i : i + batch_size]) + " "
+        yield batch
+        await asyncio.sleep(0.04)  # ~25 batches/sec for smooth streaming
 
 
 async def shutdown() -> None:

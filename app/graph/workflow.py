@@ -1,16 +1,4 @@
-"""
-LangGraph Workflow — the declarative state-graph that drives request processing.
-
-This module defines a LangGraph StateGraph where:
-- Each NODE wraps an async agent function (safety, retriever, planner, …).
-- EDGES encode the pipeline order and conditional routing.
-- The compiled graph is exposed via `build_workflow()` for use by the API layer.
-
-The graph mirrors the sequential pipeline in the Orchestrator but adds:
-- Conditional branching (e.g. short-circuit on safety failure).
-- Potential for parallel fan-out in future iterations.
-- Visual graph inspection via LangGraph Studio.
-"""
+"""LangGraph Workflow — the declarative state-graph that drives request processing."""
 
 from __future__ import annotations
 
@@ -33,14 +21,12 @@ from app.toolbox.toolbox import Toolbox
 from app.tools.habit_tracker_tool import set_memory_manager as set_habit_mm
 from app.tools.knowledge_store_tool import set_memory_manager as set_knowledge_mm
 from app.tools.reminder_tool import set_memory_manager as set_reminder_mm
+from app.tools.task_tool import set_memory_manager as set_task_mm
 from app.utils.logger import get_logger
 
 logger = get_logger("workflow")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Node names
-# ═══════════════════════════════════════════════════════════════════════════════
 SAFETY = "safety_check"
 RETRIEVE = "retrieve"
 PLAN = "plan"
@@ -52,28 +38,15 @@ LEARN = "learn"
 RESPOND = "respond"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# JarvisWorkflow — wrapper that builds and holds the compiled LangGraph
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 class JarvisWorkflow:
-    """
-    Encapsulates the full LangGraph-based JARVIS pipeline.
-
-    Usage::
-
-        wf = JarvisWorkflow()
-        await wf.initialize()
-        result = await wf.run("What should I study today?", user_id="u1")
-    """
+    """Encapsulates the full LangGraph-based JARVIS pipeline."""
 
     def __init__(self) -> None:
-        # Core systems
         self.memory = MemoryManager()
         self.toolbox = Toolbox()
 
-        # Agents — populated during initialize()
         self.retriever: Optional[RetrieverAgent] = None
         self.planner: Optional[PlannerAgent] = None
         self.task_decomposer: Optional[TaskDecomposer] = None
@@ -81,11 +54,9 @@ class JarvisWorkflow:
         self.executor: Optional[ExecutorAgent] = None
         self.behavior_analyzer: Optional[BehaviorAnalyzer] = None
 
-        # The compiled LangGraph application
         self._app = None
         self._initialized = False
 
-    # ── Initialization ──────────────────────────────────────────────────────
 
     async def initialize(self) -> None:
         """Initialize memory, tools, agents, and compile the graph."""
@@ -99,6 +70,7 @@ class JarvisWorkflow:
         set_reminder_mm(self.memory)
         set_habit_mm(self.memory)
         set_knowledge_mm(self.memory)
+        set_task_mm(self.memory)
 
         tools_desc = self.toolbox.get_tools_description()
 
@@ -119,39 +91,9 @@ class JarvisWorkflow:
     # ── Graph Construction ──────────────────────────────────────────────────
 
     def _build_graph(self):
-        """
-        Construct the LangGraph StateGraph and return the compiled app.
-
-        Graph topology — conditional routing after planner::
-
-            START
-              │
-              ▼
-            [safety_check] ──(blocked)──▶ [respond] ──▶ END
-              │ (safe)
-              ▼
-            [retrieve]
-              │
-              ▼
-            [plan] ──(answer)──▶ [execute] ──▶ [respond] ──▶ END
-              │                 ▲
-              ├─(plan)──▶ [decompose] ──▶ [execute] ──▶ [respond] ──▶ END
-              │
-              └─(action)──▶ [decompose]
-                                │
-                              [action_plan]
-                                │
-                              [confirm]
-                                │
-                              [execute]
-                                │
-                              [learn]
-                                │
-                              [respond] ──▶ END
-        """
+        """Construct the LangGraph StateGraph and return the compiled app."""
         graph = StateGraph(dict)
 
-        # ── Register nodes ───────────────────────────────────────────────
         graph.add_node(SAFETY, self._node_safety)
 
         graph.add_node(RETRIEVE, self._node_retrieve)
@@ -166,11 +108,8 @@ class JarvisWorkflow:
         graph.add_node(LEARN, self._node_learn)
         graph.add_node(RESPOND, self._node_respond)
 
-        # ── Entry point ──────────────────────────────────────────────────
         graph.set_entry_point(SAFETY)
 
-        # ── Edges ────────────────────────────────────────────────────────
-        # After safety: branch on error
         graph.add_conditional_edges(
             SAFETY,
             self._route_after_safety,
@@ -180,10 +119,8 @@ class JarvisWorkflow:
             },
         )
 
-        # Retrieve always leads to plan
         graph.add_edge(RETRIEVE, PLAN)
 
-        # After plan: branch on decision
         graph.add_conditional_edges(
             PLAN,
             self._route_after_plan,
@@ -194,7 +131,6 @@ class JarvisWorkflow:
             },
         )
 
-        # After decompose: branch on decision (plan→execute, action→action_plan)
         graph.add_conditional_edges(
             DECOMPOSE,
             self._route_after_decompose,
@@ -204,11 +140,16 @@ class JarvisWorkflow:
             },
         )
 
-        # Action path: action_plan → confirm → execute → learn → respond
         graph.add_edge(ACTION_PLAN, CONFIRM)
-        graph.add_edge(CONFIRM, EXECUTE)
+        graph.add_conditional_edges(
+            CONFIRM,
+            self._route_after_confirm,
+            {
+                "execute": EXECUTE,
+                "respond": RESPOND,
+            },
+        )
 
-        # After execute: branch on decision (action→learn, else→respond)
         graph.add_conditional_edges(
             EXECUTE,
             self._route_after_execute,
@@ -223,7 +164,6 @@ class JarvisWorkflow:
 
         return graph.compile()
 
-    # ── Routing Functions ───────────────────────────────────────────────────
 
     @staticmethod
     def _route_after_safety(state: dict) -> str:
@@ -250,13 +190,21 @@ class JarvisWorkflow:
         return "execute"
 
     @staticmethod
-    def _route_after_execute(state: dict) -> str:
-        """After execute: always run learning so every turn can update memory."""
-        return "learn"
+    def _route_after_confirm(state: dict) -> str:
+        """After confirm: if comms confirmation is pending, skip execution and respond directly."""
+        exec_status = state.get("execution", {}).get("execution_status", "")
+        if exec_status == "awaiting_confirmation":
+            return "respond"
+        return "execute"
 
-    # ── Node Implementations ────────────────────────────────────────────────
-    # Each node is a thin async wrapper around the corresponding agent.  It
-    # receives the full state dict and returns the (possibly updated) state.
+    @staticmethod
+    def _route_after_execute(state: dict) -> str:
+        """After execute: only run learning for action decisions (skip for answer/plan to reduce latency)."""
+        decision = state.get("planner_output", {}).get("decision", "answer")
+        if decision == "action":
+            return "learn"
+        return "respond"
+
 
     async def _node_safety(self, state: dict) -> dict:
         """Run safety checks on user input."""
@@ -319,16 +267,85 @@ class JarvisWorkflow:
             state = add_log_entry(state, "action_planner", "error", str(e))
         return state
 
-    async def _node_confirm(self, state: dict) -> dict:
-        """
-        Handle action confirmation.
+    # Communication tools that require user confirmation before sending
+    COMMS_TOOLS = {"email_tool", "sms_tool", "whatsapp_tool"}
 
-        If requires_confirmation is set, auto-confirm for now.
-        """
+    async def _node_confirm(self, state: dict) -> dict:
+        """Handle action confirmation."""
+        action_plan = state.get("action_plan", {})
+        actions = action_plan.get("actions", [])
+
+        # Find communication actions
+        comms_actions = [a for a in actions if a.get("tool_name") in self.COMMS_TOOLS]
+
+        if comms_actions:
+            # Build confirmation payload for the first comms action
+            action = comms_actions[0]
+            tool_name = action.get("tool_name", "")
+            params = action.get("parameters", {})
+
+            # Resolve contact names to real email/phone so the card shows the actual recipient
+            user_id = state.get("system", {}).get("user_id", "")
+            if self.executor:
+                params = await self.executor._resolve_contact_params(tool_name, params, user_id)
+                raw_input = state.get("user_request", {}).get("raw_input", "")
+                params = self.executor._sanitize_action_params(tool_name, params, raw_input)
+
+            # Determine channel-specific fields
+            if tool_name == "email_tool":
+                channel = "email"
+                recipient = params.get("recipient", "unknown")
+                subject = params.get("subject", "(no subject)")
+                body = params.get("body", "")
+            elif tool_name == "sms_tool":
+                channel = "sms"
+                recipient = params.get("phone_number", "unknown")
+                subject = ""
+                body = params.get("message", "")
+            else:  # whatsapp_tool
+                channel = "whatsapp"
+                recipient = params.get("phone_number", "unknown")
+                subject = ""
+                body = params.get("message", "")
+
+            import uuid
+            action_id = f"comms_{uuid.uuid4().hex[:8]}"
+
+            subject_line = f"\nSubject: {subject}" if subject else ""
+            confirmation_text = (
+                f"I've drafted a {channel} message to {recipient}. "
+                f"Please review and confirm before I send it."
+                f"\n\nTo: {recipient}{subject_line}"
+                f"\nMessage:\n{body}"
+            )
+
+            response = {
+                "final_output": confirmation_text,
+                "response_format": "confirmation_request",
+                "structured_data": {
+                    "type": "pending_confirmation",
+                    "action_id": action_id,
+                    "channel": channel,
+                    "recipient": recipient,
+                    "subject": subject,
+                    "body": body,
+                    "tool_name": tool_name,
+                    "tool_params": params,
+                },
+            }
+            execution = {"tool_calls": [], "execution_status": "awaiting_confirmation", "generated_output": None}
+            system = {**state.get("system", {}), "current_stage": "response"}
+            state = {**state, "execution": execution, "response": response, "system": system}
+            state = add_log_entry(state, "confirm", "pending_confirmation",
+                                  f"Awaiting user confirmation for {channel} to {recipient}")
+            logger.info(f"Comms confirmation requested: {channel} to {recipient}", event_type="comms_confirm")
+            return state
+
+        # Non-comms actions: auto-confirm as before
         if state.get("system", {}).get("requires_confirmation"):
             state = add_log_entry(
                 state, "orchestrator", "auto_confirmed",
-                "Auto-confirmed (confirmation UI not yet implemented)",
+                "Auto-confirmed (non-communication action)",
             )
             system = {**state.get("system", {}), "confirmed": True}
             state = {**state, "system": system}
@@ -424,12 +441,7 @@ class JarvisWorkflow:
         return state
 
     async def _node_respond(self, state: dict) -> dict:
-        """
-        Terminal node — save conversation and mark processing complete.
-
-        The response payload is already built by the Executor; this node
-        performs housekeeping (conversation save) and logs completion.
-        """
+        """Terminal node — save conversation and mark processing complete."""
         try:
             await self._save_conversation(state)
         except Exception as e:
@@ -448,17 +460,7 @@ class JarvisWorkflow:
         user_id: str = "default_user",
         session_id: str = "",
     ) -> Dict[str, Any]:
-        """
-        Process a user request through the compiled LangGraph.
-
-        Args:
-            user_input: Raw user text.
-            user_id: Authenticated user ID.
-            session_id: Optional session ID.
-
-        Returns:
-            Standardised response dict (same shape as Orchestrator.process).
-        """
+        """Process a user request through the compiled LangGraph."""
         if not self._initialized:
             await self.initialize()
 
@@ -494,11 +496,7 @@ class JarvisWorkflow:
 
     @staticmethod
     def _build_response(state: dict, start_time: float) -> Dict[str, Any]:
-        """
-        Build a unified response dict from the final graph state.
-
-        Works for both success and error states.
-        """
+        """Build a unified response dict from the final graph state."""
         total_ms = (time.time() - start_time) * 1000
         system = state.get("system", {})
         response = state.get("response", {})
@@ -567,15 +565,8 @@ class JarvisWorkflow:
         await self.memory.close()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# Convenience builder — for use by main.py / tests
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def build_workflow() -> JarvisWorkflow:
-    """
-    Factory that returns an *uninitialised* JarvisWorkflow.
-
-    Call ``await wf.initialize()`` before first use.
-    """
+    """Factory that returns an uninitialised JarvisWorkflow."""
     return JarvisWorkflow()

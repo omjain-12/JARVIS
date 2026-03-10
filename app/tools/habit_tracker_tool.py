@@ -1,6 +1,4 @@
-"""
-Habit Tracker Tool — logs habit completions and tracks streaks.
-"""
+"""Habit Tracker Tool — logs habit completions and tracks streaks."""
 
 from __future__ import annotations
 
@@ -24,17 +22,7 @@ async def log_habit(
     habit_name: str,
     notes: str = "",
 ) -> Dict[str, Any]:
-    """
-    Log a habit completion.
-
-    Args:
-        user_id: The user ID.
-        habit_name: Name of the habit to log.
-        notes: Optional notes about this completion.
-
-    Returns:
-        Dict with status and details.
-    """
+    """Log a habit completion."""
     try:
         if not habit_name:
             return {"status": "error", "message": "Habit name is required."}

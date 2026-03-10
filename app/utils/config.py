@@ -1,7 +1,4 @@
-"""
-Configuration module for JARVIS AI System.
-Loads all environment variables and validates them at startup using Pydantic BaseSettings.
-"""
+"""Configuration module for JARVIS AI System."""
 
 import os
 from typing import Optional
@@ -48,6 +45,19 @@ class AzureDocIntelligenceConfig(BaseSettings):
     """Azure Document Intelligence configuration."""
     endpoint: str = Field(default="", alias="AZURE_DOC_INTELLIGENCE_ENDPOINT")
     api_key: str = Field(default="", alias="AZURE_DOC_INTELLIGENCE_API_KEY")
+
+    class Config:
+        env_file = ".env"
+        extra = "ignore"
+
+
+class AzureSpeechConfig(BaseSettings):
+    """Azure Speech configuration."""
+    key: str = Field(default="", alias="AZURE_SPEECH_KEY")
+    region: str = Field(default="", alias="AZURE_SPEECH_REGION")
+    tts_voice: str = Field(default="en-US-AndrewNeural", alias="AZURE_TTS_VOICE")
+    tts_style: str = Field(default="chat", alias="AZURE_TTS_STYLE")
+    tts_force_male: bool = Field(default=True, alias="AZURE_TTS_FORCE_MALE")
 
     class Config:
         env_file = ".env"
@@ -124,6 +134,7 @@ class Settings:
         self.azure_search = AzureSearchConfig()
         self.azure_blob = AzureBlobConfig()
         self.azure_doc_intelligence = AzureDocIntelligenceConfig()
+        self.azure_speech = AzureSpeechConfig()
         self.database = DatabaseConfig()
         self.whapi = WhapiConfig()
         self.twilio = TwilioConfig()

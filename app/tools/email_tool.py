@@ -1,6 +1,4 @@
-"""
-Email Tool — sends emails via SMTP or Azure Communication Services.
-"""
+"""Email Tool — sends emails via SMTP or Azure Communication Services."""
 
 from __future__ import annotations
 
@@ -24,22 +22,7 @@ async def send_email(
     smtp_user: str = "omjainoj10@gmail.com",
     smtp_password: str = "slgsdxmpdoflcswe",
 ) -> Dict[str, Any]:
-    """
-    Send an email message.
-
-    Args:
-        recipient: Email address of the recipient.
-        subject: Email subject line.
-        body: Email body text.
-        sender: Sender email address.
-        smtp_host: SMTP server hostname.
-        smtp_port: SMTP server port.
-        smtp_user: SMTP auth username.
-        smtp_password: SMTP auth password.
-
-    Returns:
-        Dict with status and details.
-    """
+    """Send an email message."""
     try:
         if not recipient or not subject:
             return {"status": "error", "message": "Recipient and subject are required."}

@@ -1,12 +1,4 @@
-"""
-Toolbox — unified tool registry for all available tools.
-
-Provides a central interface for:
-- Registering tools
-- Discovering available tools
-- Dispatching tool calls
-- Validating tool parameters
-"""
+"""Toolbox — unified tool registry for all available tools."""
 
 from __future__ import annotations
 
@@ -52,14 +44,7 @@ class Tool:
 
 
 class Toolbox:
-    """
-    Central tool registry and dispatcher.
-
-    Usage:
-        toolbox = Toolbox()
-        toolbox.register_defaults()
-        result = await toolbox.execute("email_tool", {"recipient": "...", ...})
-    """
+    """Central tool registry and dispatcher."""
 
     def __init__(self):
         self._tools: Dict[str, Tool] = {}
@@ -88,8 +73,9 @@ class Toolbox:
         from app.tools.reminder_tool import TOOL_METADATA as reminder_meta
         from app.tools.habit_tracker_tool import TOOL_METADATA as habit_meta
         from app.tools.knowledge_store_tool import TOOL_METADATA as knowledge_meta
+        from app.tools.task_tool import TOOL_METADATA as task_meta
 
-        for meta in [email_meta, sms_meta, whatsapp_meta, reminder_meta, habit_meta, knowledge_meta]:
+        for meta in [email_meta, sms_meta, whatsapp_meta, reminder_meta, habit_meta, knowledge_meta, task_meta]:
             self.register_from_metadata(meta)
 
         logger.info(f"Registered {len(self._tools)} default tools", event_type="toolbox_init")
@@ -118,16 +104,7 @@ class Toolbox:
         return "\n".join(lines)
 
     async def execute(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute a registered tool by name.
-
-        Args:
-            tool_name: Name of the tool to execute.
-            parameters: Dict of parameters to pass to the tool function.
-
-        Returns:
-            Tool execution result dict.
-        """
+        """Execute a registered tool by name."""
         tool = self.get_tool(tool_name)
         if not tool:
             logger.warning(f"Tool not found: {tool_name}")

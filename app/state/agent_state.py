@@ -1,11 +1,4 @@
-"""
-Agent State — the shared typed state object that flows through the entire agent pipeline.
-
-Every agent reads from and writes to this state. The state is the single source of truth
-for the lifecycle of a request. Each agent updates specific fields and passes it forward.
-
-Uses LangGraph-compatible TypedDict for graph integration.
-"""
+"""Agent State — the shared typed state object that flows through the entire agent pipeline."""
 
 from __future__ import annotations
 
@@ -23,8 +16,8 @@ class SystemState(TypedDict, total=False):
     request_id: str
     user_id: str
     timestamp: str
-    current_stage: str  # safety | retrieval | planning | task_decomposition | action_planning | confirmation | execution | learning | response
-    request_type: str   # reasoning | planning | action
+    current_stage: str  
+    request_type: str   
     requires_confirmation: bool
     error: str
 
@@ -122,24 +115,7 @@ class LogEntry(TypedDict, total=False):
 
 
 class AgentState(TypedDict, total=False):
-    """
-    The master state object that flows through the entire agent pipeline.
-
-    This is a LangGraph-compatible TypedDict. Every node in the workflow graph
-    receives this state, operates on it, and returns the updated version.
-
-    Fields:
-        system       — request lifecycle metadata
-        user_request — raw and validated user input
-        memory_context — retrieved context from memory systems
-        planner_output — strategy from the Planner
-        task_plan    — decomposed tasks from the Task Decomposer
-        action_plan  — tool instructions from the Action Planner
-        execution    — results from tool execution
-        learning     — behavioral insights
-        response     — final output to user
-        logs         — full agent trace
-    """
+    """The master state object that flows through the entire agent pipeline."""
     system: SystemState
     user_request: UserRequest
     memory_context: MemoryContext
@@ -160,17 +136,7 @@ def create_initial_state(
     user_id: str = "default_user",
     session_id: str = "",
 ) -> AgentState:
-    """
-    Create a fresh AgentState for a new user request.
-
-    Args:
-        user_input: The raw text input from the user.
-        user_id: The authenticated user identifier.
-        session_id: An optional session identifier.
-
-    Returns:
-        A fully initialized AgentState ready for the pipeline.
-    """
+    """Create a fresh AgentState for a new user request."""
     request_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
 

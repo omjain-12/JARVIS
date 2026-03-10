@@ -1,6 +1,4 @@
-"""
-WhatsApp Tool — sends WhatsApp messages via Whapi Cloud API.
-"""
+"""WhatsApp Tool — sends WhatsApp messages via Whapi Cloud API."""
 
 from __future__ import annotations
 
@@ -82,18 +80,7 @@ async def send_whatsapp(
     api_token: str = "",
     base_url: str = "",
 ) -> Dict[str, Any]:
-    """
-    Send a WhatsApp message.
-
-    Args:
-        phone_number: Recipient phone number (international format, e.g. 919876543210).
-        message: Message content.
-        api_token: Whapi bearer token. If empty, loaded from WHAPI_TOKEN env var.
-        base_url: Whapi endpoint (defaults to text message endpoint).
-
-    Returns:
-        Dict with status and details.
-    """
+    """Send a WhatsApp message."""
     try:
         if not phone_number or not message:
             return {"status": "error", "message": "Phone number and message are required."}

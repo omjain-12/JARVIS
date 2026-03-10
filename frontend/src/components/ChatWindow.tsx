@@ -6,9 +6,10 @@ import TypingIndicator from "./TypingIndicator";
 interface ChatWindowProps {
   messages: ChatMessage[];
   isLoading: boolean;
+  onUpdateMessage?: (id: string, updates: Partial<ChatMessage>) => void;
 }
 
-export default function ChatWindow({ messages, isLoading }: ChatWindowProps) {
+export default function ChatWindow({ messages, isLoading, onUpdateMessage }: ChatWindowProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -16,29 +17,32 @@ export default function ChatWindow({ messages, isLoading }: ChatWindowProps) {
   }, [messages, isLoading]);
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-6 md:px-8 lg:px-16">
+    <div className="flex-1 overflow-y-auto px-4 pt-8 pb-40 md:px-12 lg:px-24">
       {messages.length === 0 && !isLoading && (
-        <div className="flex flex-col items-center justify-center h-full text-center">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-jarvis-accent to-purple-500 flex items-center justify-center text-white text-2xl font-bold mb-4">
-            J
+        <div className="flex flex-col items-center justify-center h-full text-center mt-[-10vh]">
+          <div className="w-24 h-24 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-jarvis-accent-primary/20">
+            <img
+              src="/logo.png"
+              alt="Logo"
+              className="w-24 h-24 object-contain"
+            />
           </div>
-          <h2 className="text-xl font-semibold text-jarvis-text mb-2">
-            Hello! I&apos;m JARVIS
+          <h2 className="text-2xl font-semibold text-jarvis-text tracking-tight mb-3">
+            How can I help you today?
           </h2>
-          <p className="text-jarvis-muted text-sm max-w-md">
-            Your personal AI assistant. Ask me anything, set reminders, track
-            habits, or manage your tasks.
+          <p className="text-jarvis-muted text-sm max-w-sm">
+            I can manage your calendar, track your habits, save knowledge notes, or simply chat.
           </p>
         </div>
       )}
 
-      {messages.map((msg) => (
-        <ChatBubble key={msg.id} message={msg} />
-      ))}
-
-      {isLoading && <TypingIndicator />}
-
-      <div ref={bottomRef} />
+      <div className="space-y-6 max-w-3xl mx-auto">
+        {messages.map((msg) => (
+          <ChatBubble key={msg.id} message={msg} onUpdateMessage={onUpdateMessage} />
+        ))}
+        {isLoading && <TypingIndicator />}
+        <div ref={bottomRef} className="h-4" />
+      </div>
     </div>
   );
 }

@@ -1,12 +1,4 @@
-"""
-Behavior Analyzer — lightweight learning layer.
-
-Tracks:
-- Missed reminders (overdue / not completed)
-- Habit streaks (consecutive days)
-- Frequent tasks / action types
-- Time preferences (active hours based on interaction timestamps)
-"""
+"""Behavior Analyzer — lightweight learning layer."""
 
 from __future__ import annotations
 
@@ -190,11 +182,7 @@ class BehaviorAnalyzer:
         return self._deduplicate_facts(facts)
 
     async def analyze(self, state: AgentState) -> AgentState:
-        """
-        Analyze the completed request and extract learning signals.
-
-        Tracks: missed reminders, habit streaks, frequent tasks, time preferences.
-        """
+        """Analyze the completed request and extract learning signals."""
         logger.log_agent_start("behavior_analyzer")
         start_time = time.time()
 

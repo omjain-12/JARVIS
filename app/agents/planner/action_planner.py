@@ -1,9 +1,4 @@
-"""
-Action Planner — converts decomposed tasks into tool-executable instructions.
-
-Takes each task from the Task Decomposer and, if it requires tool usage,
-generates precise tool call instructions with validated parameters.
-"""
+"""Action Planner — converts decomposed tasks into tool-executable instructions."""
 
 from __future__ import annotations
 
@@ -49,9 +44,7 @@ Respond with ONLY valid JSON:
 
 
 class ActionPlanner:
-    """
-    Converts tasks into executable tool call instructions.
-    """
+    """Converts tasks into executable tool call instructions."""
 
     def __init__(self, tools_description: str = ""):
         self.tools_description = tools_description
@@ -62,18 +55,7 @@ class ActionPlanner:
         return get_openai_client()
 
     async def plan_actions(self, state: AgentState) -> AgentState:
-        """
-        Create action instructions from tasks.
-
-        For reasoning/planning requests: no tool actions needed, skip to execution.
-        For action requests: generate tool call instructions.
-
-        Args:
-            state: Current AgentState with task_plan populated.
-
-        Returns:
-            Updated AgentState with action_plan populated.
-        """
+        """Create action instructions from tasks."""
         logger.set_context(
             request_id=state.get("system", {}).get("request_id", ""),
             user_id=state.get("system", {}).get("user_id", ""),

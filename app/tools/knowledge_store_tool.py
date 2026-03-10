@@ -1,9 +1,4 @@
-"""
-Knowledge Store Tool — saves user-provided information into the vector knowledge base.
-
-This tool enables JARVIS to persist facts, personal details, notes, and
-other information the user explicitly asks to be remembered.
-"""
+"""Knowledge Store Tool — saves user-provided information into the vector knowledge base."""
 
 from __future__ import annotations
 
@@ -27,17 +22,7 @@ async def store_knowledge(
     content: str,
     topic: str = "personal_info",
 ) -> Dict[str, Any]:
-    """
-    Store a piece of knowledge or personal information for the user.
-
-    Args:
-        user_id: The user ID.
-        content: The information to store (e.g. "User's name is Om Jain").
-        topic: Category/topic for the information (e.g. personal_info, preference, note).
-
-    Returns:
-        Dict with status and details.
-    """
+    """Store a piece of knowledge or personal information for the user."""
     try:
         if not content or not content.strip():
             return {"status": "error", "message": "Content is required."}

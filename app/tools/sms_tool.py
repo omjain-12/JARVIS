@@ -1,6 +1,4 @@
-"""
-SMS Tool — sends SMS messages via Twilio or simulated mode.
-"""
+"""SMS Tool — sends SMS messages via Twilio or simulated mode."""
 
 from __future__ import annotations
 
@@ -47,19 +45,7 @@ async def send_sms(
     twilio_token: str = "",
     twilio_from: str = "",
 ) -> Dict[str, Any]:
-    """
-    Send an SMS message.
-
-    Args:
-        phone_number: The recipient's phone number (E.164 format).
-        message: The SMS message text.
-        twilio_sid: Twilio Account SID (optional, simulates if empty).
-        twilio_token: Twilio Auth Token.
-        twilio_from: Twilio sender number.
-
-    Returns:
-        Dict with status and details.
-    """
+    """Send an SMS message."""
     try:
         # Reload .env on each call so long-running servers pick up latest sender config.
         load_dotenv(override=True)

@@ -136,6 +136,9 @@ AZURE_SEARCH_API_KEY=your-search-key
 # Voice (optional)
 AZURE_SPEECH_KEY=your-speech-key
 AZURE_SPEECH_REGION=eastus
+AZURE_TTS_VOICE=en-US-AndrewNeural
+AZURE_TTS_STYLE=chat
+AZURE_TTS_FORCE_MALE=true
 
 # WhatsApp via Whapi (optional)
 WHAPI_TOKEN=your-whapi-bearer-token

@@ -1,16 +1,4 @@
-"""
-JARVIS API Server — FastAPI application exposing the AI Second Brain.
-
-Endpoints:
-    Auth:       POST /auth/register, POST /auth/login
-    Documents:  POST /documents/upload, GET /documents, GET /documents/{id}, DELETE /documents/{id}
-    Knowledge:  POST /knowledge/query
-    Tasks:      POST /tasks, GET /tasks
-    Reminders:  POST /reminders, GET /reminders
-    Habits:     POST /habits, GET /habits, POST /habits/{id}/log
-    Memory:     GET /conversations
-    System:     GET /health, GET /status
-"""
+"""JARVIS API Server — FastAPI application exposing the AI Second Brain."""
 
 from __future__ import annotations
 
@@ -118,11 +106,7 @@ app.add_middleware(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def get_current_user(request: Request) -> dict:
-    """
-    Extract and validate the JWT bearer token.
-
-    Falls back to a default dev user when JWT is not configured.
-    """
+    """Extract and validate the JWT bearer token."""
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         if settings.app.debug:
@@ -257,12 +241,7 @@ async def login(body: LoginRequest):
 
 @app.post("/knowledge/query", response_model=QueryResponse, tags=["Knowledge"])
 async def query_knowledge(body: QueryRequest, user: dict = Depends(get_current_user)):
-    """
-    Process a natural-language query through the full agent pipeline.
-
-    This is the primary endpoint — it invokes the LangGraph workflow
-    (safety → retrieve → plan → decompose → action_plan → execute → learn).
-    """
+    """Process a natural-language query through the full agent pipeline."""
     result = await workflow.run(
         user_input=body.query,
         user_id=user["user_id"],
@@ -286,12 +265,7 @@ async def upload_document(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user),
 ):
-    """
-    Upload a document for ingestion into the knowledge base.
-
-    Supported types: .pdf, .docx, .txt, .md, .pptx
-    The document is chunked, embedded, and stored in the vector index.
-    """
+    """Upload a document for ingestion into the knowledge base."""
     allowed_extensions = {".pdf", ".docx", ".txt", ".md", ".pptx"}
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in allowed_extensions:

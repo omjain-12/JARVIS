@@ -1,9 +1,4 @@
-"""
-Safety Layer — input validation, sanitization, and rate limiting.
-
-This module runs before any user input reaches the agent pipeline.
-Content safety is handled by Azure AI Foundry Guardrails at the model level.
-"""
+"""Safety Layer — input validation, sanitization, and rate limiting."""
 
 from __future__ import annotations
 
@@ -70,16 +65,7 @@ def validate_input_length(text: str) -> bool:
 
 
 async def run_safety_check(state: AgentState) -> AgentState:
-    """
-    Run the safety validation pipeline on user input.
-
-    Pipeline:
-    1. Rate limiting
-    2. Input length validation
-    3. Input sanitization
-
-    Content safety is enforced by Azure AI Foundry Guardrails at the model layer.
-    """
+    """Run the safety validation pipeline on user input."""
     logger.set_context(
         request_id=state.get("system", {}).get("request_id", ""),
         user_id=state.get("system", {}).get("user_id", ""),

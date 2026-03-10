@@ -1,7 +1,4 @@
-"""
-Structured logging module for JARVIS AI System.
-Provides JSON-structured logging with request tracing and agent decision logging.
-"""
+"""Structured logging module for JARVIS AI System."""
 
 import logging
 import json
@@ -43,10 +40,7 @@ class JSONFormatter(logging.Formatter):
 
 
 class AgentLogger:
-    """
-    Logger with built-in support for agent tracing, request correlation,
-    structured metadata, and optional Azure Application Insights export.
-    """
+    """Logger with built-in support for agent tracing, request correlation, structured metadata, and optional Azure Application Insights export."""
 
     def __init__(self, name: str = "jarvis", level: str = "INFO"):
         self.logger = logging.getLogger(name)

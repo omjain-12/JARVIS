@@ -1,8 +1,4 @@
-"""
-Azure AI Search client — provides vector and hybrid search against Azure AI Search.
-
-Used by the Retriever agent for knowledge retrieval.
-"""
+"""Azure AI Search client — provides vector and hybrid search against Azure AI Search."""
 
 from __future__ import annotations
 
@@ -17,14 +13,7 @@ _search_client = None
 
 
 def get_search_client():
-    """
-    Return a shared Azure AI Search SearchClient instance.
-
-    Environment / config variables used:
-        AZURE_SEARCH_ENDPOINT
-        AZURE_SEARCH_KEY  / AZURE_SEARCH_API_KEY
-        AZURE_SEARCH_INDEX / AZURE_SEARCH_INDEX_NAME
-    """
+    """Return a shared Azure AI Search SearchClient instance."""
     global _search_client
     if _search_client is not None:
         return _search_client
@@ -68,18 +57,7 @@ async def azure_search(
     top: int = 5,
     user_id: str = "",
 ) -> List[Dict[str, Any]]:
-    """
-    Search Azure AI Search and return results normalized to the same
-    format as the local vector DB (list of dicts with id, content, score, …).
-
-    Args:
-        query: Natural-language search query.
-        top: Maximum number of results to return.
-        user_id: Optional user filter.
-
-    Returns:
-        List of result dicts: [{id, content, score, source_filename, …}]
-    """
+    """Search Azure AI Search and return results normalized to the local vector DB format."""
     client = get_search_client()
     if client is None:
         return []

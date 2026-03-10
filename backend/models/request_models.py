@@ -1,6 +1,4 @@
-"""
-Pydantic request/response models for the JARVIS chat and voice API.
-"""
+"""Pydantic request/response models for the JARVIS chat and voice API."""
 
 from __future__ import annotations
 
@@ -23,12 +21,14 @@ class ConfirmRequest(BaseModel):
     """POST /confirm request body."""
     action_id: str = Field(..., min_length=1)
     confirmed: bool = True
+    tool_name: str = Field(default="")
+    tool_params: Dict[str, Any] = Field(default_factory=dict)
 
 
 class TextToVoiceRequest(BaseModel):
     """POST /text-to-voice request body."""
     text: str = Field(..., min_length=1, max_length=5000)
-    voice_name: str = Field(default="en-US-JennyNeural")
+    voice_name: str = Field(default="en-US-GuyNeural")
 
 
 # ── Response Models ──
@@ -65,6 +65,7 @@ class ConfirmResponse(BaseModel):
     """POST /confirm response body."""
     status: str
     message: str
+    result: Optional[Dict[str, Any]] = None
 
 
 class HealthResponse(BaseModel):

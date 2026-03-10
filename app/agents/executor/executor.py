@@ -1,13 +1,4 @@
-"""
-Executor Agent — generates text responses and executes tool actions.
-
-The Executor:
-1. Generates text answers using the LLM
-2. Executes tool calls via the Toolbox
-3. Formats the final response
-
-The Executor does NOT reason — that is the Planner's job.
-"""
+"""Executor Agent — generates text responses and executes tool actions."""
 
 from __future__ import annotations
 
@@ -28,7 +19,9 @@ logger = get_logger("executor")
 # ── Prompt ──
 
 ANSWER_PROMPT = """You are JARVIS, a personal AI assistant.
-Answer using ONLY the provided context. Be concise and use bullet points when helpful.
+Answer using ONLY the provided context. Be concise and conversational — respond the way a helpful human assistant would speak out loud.
+Do NOT use markdown formatting: no bullet points, no dashes, no bold/italic markers, no numbered lists, no headers.
+Write in plain, natural sentences. If there are multiple items, weave them into flowing prose or short sentences.
 If context is insufficient, say so.
 
 Context:
@@ -37,11 +30,16 @@ Context:
 Question:
 {query}"""
 
+ACTION_RESULT_PROMPT = """You are JARVIS, a personal AI assistant.
+The user asked: {query}
+The following actions were performed and here are the raw results:
+{raw_results}
+
+Summarize what was done in 1-3 natural, conversational sentences. Do NOT use markdown, bullet points, dashes, or any formatting. Speak as if you are verbally telling the user what happened."""
+
 
 class ExecutorAgent:
-    """
-    Generates text responses, executes tool actions, and formats output.
-    """
+    """Generates text responses, executes tool actions, and formats output."""
 
     def __init__(self, memory_manager: MemoryManager, toolbox: Toolbox):
         self.memory = memory_manager
@@ -55,14 +53,7 @@ class ExecutorAgent:
     # ── Main entry point ──
 
     async def execute(self, state: AgentState) -> AgentState:
-        """
-        Main execution pipeline — the workflow graph node function.
-
-        Routes based on planner decision:
-        - answer/plan: generate text response
-        - action (confirmed): execute tools then format
-        - action (unconfirmed): return confirmation request
-        """
+        """Main execution pipeline — the workflow graph node function."""
         logger.set_context(
             request_id=state.get("system", {}).get("request_id", ""),
             user_id=state.get("system", {}).get("user_id", ""),
@@ -114,10 +105,31 @@ class ExecutorAgent:
         raw_input = state.get("user_request", {}).get("raw_input", "")
         tool_results = await self.execute_actions(action_plan, user_id, raw_input)
 
-        lines = [f"- {r['tool']}: {r['result']}" for r in tool_results]
-        response_text = "Actions completed:\n" + "\n".join(lines) if lines else "No actions were executed."
+        if not tool_results:
+            response_text = "No actions were executed."
+        else:
+            raw_lines = "; ".join(f"{r['tool']}: {r['result']}" for r in tool_results)
+            response_text = await self._summarize_action_results(raw_input, raw_lines)
 
         return self.format_response(state, response_text, "action_result", tool_calls=tool_results)
+
+    async def _summarize_action_results(self, query: str, raw_results: str) -> str:
+        """Use the LLM to convert raw tool results into natural language."""
+        prompt = ACTION_RESULT_PROMPT.format(query=query, raw_results=raw_results)
+        client = self._get_llm_client()
+        if not client:
+            return raw_results
+        try:
+            response = client.chat.completions.create(
+                model=settings.azure_openai.chat_deployment,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.5,
+                max_tokens=300,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.warning(f"Action result summarization failed: {e}")
+            return raw_results
 
     # ── Confirmation response ──
 
@@ -172,7 +184,7 @@ class ExecutorAgent:
                 model=settings.azure_openai.chat_deployment,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.4,
-                max_tokens=2000,
+                max_tokens=800,
             )
             latency = (time.time() - start) * 1000
 
@@ -271,6 +283,10 @@ class ExecutorAgent:
                 continue
 
             params = action.get("parameters", {})
+
+            # Resolve contact names to actual email/phone before executing tools
+            params = await self._resolve_contact_params(tool_name, params, user_id)
+
             params = self._sanitize_action_params(tool_name, params, raw_input)
             tool = self.toolbox.get_tool(tool_name)
             if tool and "user_id" in tool.parameters:
@@ -289,6 +305,38 @@ class ExecutorAgent:
             logger.log_tool_call(tool_name, params, status, result.get("message", str(result)))
 
         return tool_results
+
+    async def _resolve_contact_params(
+        self, tool_name: str, params: Dict[str, Any], user_id: str
+    ) -> Dict[str, Any]:
+        """Resolve contact names to actual email/phone from the contacts database."""
+        resolved = dict(params)
+
+        if tool_name == "email_tool":
+            recipient = str(resolved.get("recipient", "")).strip()
+            # If it doesn't look like an email, try contact lookup
+            if recipient and "@" not in recipient:
+                contact = await self.memory.structured_db.lookup_contact_by_name(user_id, recipient)
+                if contact and contact.get("email"):
+                    logger.info(
+                        f"Resolved contact '{recipient}' to email '{contact['email']}'",
+                        event_type="contact_resolved",
+                    )
+                    resolved["recipient"] = contact["email"]
+
+        if tool_name in {"sms_tool", "whatsapp_tool"}:
+            phone = str(resolved.get("phone_number", "")).strip()
+            # If it doesn't look like a phone number, try contact lookup
+            if phone and not re.match(r"^\+?\d[\d\s\-()]{7,}$", phone):
+                contact = await self.memory.structured_db.lookup_contact_by_name(user_id, phone)
+                if contact and contact.get("phone"):
+                    logger.info(
+                        f"Resolved contact '{phone}' to phone '{contact['phone']}'",
+                        event_type="contact_resolved",
+                    )
+                    resolved["phone_number"] = contact["phone"]
+
+        return resolved
 
     @staticmethod
     def format_response(
@@ -336,5 +384,9 @@ class ExecutorAgent:
             parts.append(f"User's habits: {json.dumps(sm['habits'][:5], default=str)}")
         if sm.get("goals"):
             parts.append(f"User's goals: {json.dumps(sm['goals'][:3], default=str)}")
+        if sm.get("contacts"):
+            parts.append(f"User's contacts: {json.dumps(sm['contacts'][:10], default=str)}")
+        if sm.get("learned_facts"):
+            parts.append(f"Known facts about user: {json.dumps(sm['learned_facts'][:10], default=str)}")
 
         return "\n\n---\n\n".join(parts) if parts else "No specific context available."
